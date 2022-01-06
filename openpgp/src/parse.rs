@@ -1086,6 +1086,18 @@ impl S2K {
                     hash_bytes: S2K::decode_count(php.parse_u8("s2k_count")?),
                 }
             },
+            4 => S2K::Argon2 {
+                salt: {
+                    let mut b = [0u8; 16];
+                    let b_len = b.len();
+                    b.copy_from_slice(
+                        &php.parse_bytes("argon2_salt", b_len)?);
+                    b
+                },
+                t: php.parse_u8("argon2_t")?,
+                p: php.parse_u8("argon2_p")?,
+                m: php.parse_u8("argon2_m")?,
+            },
             100..=110 => S2K::Private {
                 tag: s2k,
                 parameters: if let Some(l) = s2k_len {

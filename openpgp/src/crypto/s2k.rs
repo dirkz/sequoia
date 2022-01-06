@@ -6,6 +6,8 @@
 //!
 //!   [Section 3.7 of RFC 4880]: https://tools.ietf.org/html/rfc4880#section-3.7
 
+use std::convert::TryInto;
+
 use crate::Error;
 use crate::Result;
 use crate::HashAlgorithm;
@@ -35,6 +37,18 @@ use quickcheck::{Arbitrary, Gen};
 #[non_exhaustive]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum S2K {
+    /// Argon2 Memory-Hard Password Hashing Function.
+    Argon2 {
+        /// The salt.
+        salt: [u8; 16],
+        /// Number of passes.
+        t: u8,
+        /// Degree of parallelism.
+        p: u8,
+        /// Exponent of memory size.
+        m: u8,
+    },
+
     /// Repeatently hashes the password with a public `salt` value.
     Iterated {
         /// Hash used for key derivation.
@@ -179,6 +193,27 @@ impl S2K {
     -> Result<SessionKey> {
         #[allow(deprecated)]
         match self {
+            &S2K::Argon2 { salt, t, p, m, } => {
+                let config = argon2::Config {
+                    time_cost: t.into(),
+                    lanes: p.into(),
+                    mem_cost: 2u32.checked_pow(m.into())
+                        .ok_or_else(|| Error::InvalidArgument(
+                            format!("Argon2 memory parameter out of bounds: {}",
+                                    m)))?,
+                    hash_length: key_size.try_into()
+                        .map_err(|_| Error::InvalidArgument(
+                            format!("key size parameter out of bounds: {}",
+                                    key_size)))?,
+                    thread_mode: argon2::ThreadMode::Parallel,
+                    variant: argon2::Variant::Argon2id,
+                    ..argon2::Config::default()
+                };
+                password.map(|password| {
+                    Ok(argon2::hash_raw(password, &salt, &config)?
+                       .into())
+                })
+            },
             &S2K::Simple { hash } | &S2K::Salted { hash, .. }
             | &S2K::Iterated { hash, .. } => password.map(|string| {
                 let mut hash = hash.context()?;
@@ -195,6 +230,7 @@ impl S2K {
                     hash.update(&zeros[..]);
 
                     match self {
+                        &S2K::Argon2 { .. } => unreachable!("handled above"),
                         &S2K::Simple { .. } => {
                             hash.update(string);
                         }
@@ -265,6 +301,7 @@ impl S2K {
             | Salted { .. }
             | Iterated { .. }
             | Implicit
+            | Argon2 { .. }
             => true,
             S2K::Private { .. }
             | S2K::Unknown { .. }
@@ -371,6 +408,11 @@ impl fmt::Display for S2K {
                     hash_bytes))
             }
             S2K::Implicit => f.write_str("Implicit S2K"),
+            S2K::Argon2 { salt, t, p, m, } => {
+                write!(f,
+                       "Argon2id with t: {}, p: {}, m: 2^{}, salt: {}",
+                       t, p, m, crate::fmt::hex::encode(salt))
+            },
             S2K::Private { tag, parameters } =>
                 if let Some(p) = parameters.as_ref() {
                     write!(f, "Private/Experimental S2K {}:{:?}", tag, p)
@@ -393,7 +435,7 @@ impl Arbitrary for S2K {
         use crate::arbitrary_helper::*;
 
         #[allow(deprecated)]
-        match gen_arbitrary_from_range(0..7, g) {
+        match gen_arbitrary_from_range(0..8, g) {
             0 => S2K::Simple{ hash: HashAlgorithm::arbitrary(g) },
             1 => S2K::Salted{
                 hash: HashAlgorithm::arbitrary(g),
@@ -412,6 +454,16 @@ impl Arbitrary for S2K {
                 },
                 hash_bytes: S2K::nearest_hash_count(Arbitrary::arbitrary(g)),
             },
+            7 => S2K::Argon2 {
+                salt: {
+                    let mut salt = [0u8; 16];
+                    arbitrary_slice(g, &mut salt);
+                    salt
+                },
+                t: Arbitrary::arbitrary(g),
+                p: Arbitrary::arbitrary(g),
+                m: Arbitrary::arbitrary(g),
+            },
             3 => S2K::Private {
                 tag: gen_arbitrary_from_range(100..111, g),
                 parameters: Some(arbitrary_bounded_vec(g, 200).into()),
@@ -421,7 +473,7 @@ impl Arbitrary for S2K {
                 parameters: Some(arbitrary_bounded_vec(g, 200).into()),
             },
             5 => S2K::Unknown {
-                tag: gen_arbitrary_from_range(4..100, g),
+                tag: gen_arbitrary_from_range(5..100, g),
                 parameters: Some(arbitrary_bounded_vec(g, 200).into()),
             },
             6 => S2K::Unknown {
