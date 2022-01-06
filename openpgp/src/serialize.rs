@@ -1320,6 +1320,11 @@ impl Marshal for S2K {
                 w.write_all(&[S2K::encode_count(hash_bytes)?])?;
             }
             S2K::Implicit => (),
+            S2K::Argon2 { salt, t, p, m, } => {
+                w.write_all(&[4])?;
+                w.write_all(salt)?;
+                w.write_all(&[*t, *p, *m])?;
+            },
             S2K::Private { tag, parameters }
             | S2K::Unknown { tag, parameters} => {
                 w.write_all(&[*tag])?;
@@ -1341,6 +1346,7 @@ impl MarshalInto for S2K {
             &S2K::Salted{ .. } => 2 + 8,
             &S2K::Iterated{ .. } => 2 + 8 + 1,
             S2K::Implicit => 0,
+            S2K::Argon2 { .. } => 20,
             S2K::Private { parameters, .. }
             | S2K::Unknown { parameters, .. } =>
                 1 + parameters.as_ref().map(|p| p.len()).unwrap_or(0),
