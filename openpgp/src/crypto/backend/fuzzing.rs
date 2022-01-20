@@ -12,6 +12,8 @@ pub mod ecdh;
 #[allow(unused_variables)]
 pub mod hash;
 #[allow(unused_variables)]
+pub mod kdf;
+#[allow(unused_variables)]
 pub mod symmetric;
 
 pub struct Backend(());

@@ -4,6 +4,7 @@ use crate::{
     Error,
     Result,
     crypto::{
+        SessionKey,
         mem::Protected,
         mpi::{MPI, ProtectedMPI},
     },
@@ -11,7 +12,7 @@ use crate::{
 };
 
 /// Abstracts over the cryptographic backends.
-pub trait Backend: Asymmetric {
+pub trait Backend: Asymmetric + Kdf {
     /// Returns a short, human-readable description of the backend.
     ///
     /// This starts with the name of the backend, possibly a version,
@@ -120,4 +121,24 @@ mod tests {
         let (secret, public) = Backend::ed25519_generate_key().unwrap();
         assert_ne!(secret.as_ref(), public);
     }
+}
+
+/// Key-Derivation-Functions.
+pub trait Kdf {
+    /// HKDF instantiated with SHA256.
+    ///
+    /// Used to derive message keys from session keys, and key
+    /// encapsulating keys from S2K mechanisms.  In both cases, using
+    /// a KDF that includes algorithm information in the given `info`
+    /// provides key space separation between cipher algorithms and
+    /// modes.
+    ///
+    /// `salt`, if given, SHOULD be 32 bytes of salt matching the
+    /// digest size of the hash function.  If it is not give, 32 zeros
+    /// are used instead.
+    ///
+    /// `okm` must not be larger than 255 * 32 (the size of the hash
+    /// digest).
+    fn hkdf_sha256(ikm: &SessionKey, salt: Option<&[u8]>, info: &[u8],
+                   okm: &mut SessionKey) -> Result<()>;
 }

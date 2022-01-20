@@ -1,11 +1,14 @@
 //! Implementation of Sequoia crypto API using the Botan cryptographic library.
 
-use crate::types::*;
+use crate::{
+    types::*,
+};
 
 pub mod aead;
 pub mod asymmetric;
 pub mod ecdh;
 pub mod hash;
+pub mod kdf;
 pub mod symmetric;
 
 pub struct Backend(());
