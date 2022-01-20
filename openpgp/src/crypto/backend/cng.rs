@@ -8,6 +8,7 @@ pub mod aead;
 pub mod asymmetric;
 pub mod ecdh;
 pub mod hash;
+pub mod kdf;
 pub mod symmetric;
 
 pub struct Backend(());
