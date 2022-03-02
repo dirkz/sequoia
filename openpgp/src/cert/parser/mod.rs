@@ -767,11 +767,19 @@ impl<'a> CertParser<'a> {
     // returns None.
     fn parse(&mut self, p: Packet) -> Result<Option<Cert>> {
         tracer!(TRACE, "CertParser::parse", 0);
-        if let Packet::Marker(_) = p {
-            // Ignore Marker Packet.  RFC4880, section 5.8:
-            //
-            //   Such a packet MUST be ignored when received.
-            return Ok(None);
+        match p {
+            Packet::Marker(_) => {
+                // Ignore Marker Packet.  RFC4880, section 5.8:
+                //
+                //   Such a packet MUST be ignored when received.
+                return Ok(None);
+            },
+            Packet::Padding(_) => {
+                // "[Padding packets] MUST be ignored when received.",
+                // section 5.15 of RFC XXXX.
+                return Ok(None);
+            },
+            _ => {},
         }
 
         if !self.packets.is_empty() {

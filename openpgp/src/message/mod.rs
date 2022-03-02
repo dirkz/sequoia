@@ -216,6 +216,11 @@ impl MessageValidator {
                 // section 5.8 of RFC4880.
                 return;
             },
+            Tag::Padding => {
+                // "[Padding packets] MUST be ignored when received.",
+                // section 5.15 of RFC XXXX.
+                return;
+            },
             _ => {
                 // Unknown token.
                 self.error = Some(MessageParserError::OpenPGP(

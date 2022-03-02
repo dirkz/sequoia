@@ -18,6 +18,7 @@ use crate::packet::{
     SEIP,
     MDC,
     AED,
+    Padding,
 };
 
 /// Convenient downcasting from Packets to Packet Bodies.
@@ -137,6 +138,7 @@ impl_downcasts!(
     SEIP,
     MDC,
     AED,
+    Padding,
 );
 
 // We ow selectively implement downcasts for the key types that alias
