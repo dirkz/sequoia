@@ -256,6 +256,7 @@ impl std::convert::TryFrom<Packet> for Unknown {
             Packet::SKESK(v) => convert(tag, common, v),
             #[allow(deprecated)]
             Packet::MDC(v) => convert(tag, common, v),
+            Packet::Padding(v) => convert(tag, common, v), // XXX: can we do better like for the Literal?
 
             // Here we can avoid copying the body.
             Packet::Literal(mut v) => {

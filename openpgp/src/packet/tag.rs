@@ -54,6 +54,8 @@ pub enum Tag {
     ///
     /// This feature is [experimental](crate#experimental-features).
     AED,
+    /// Padding packet.
+    Padding,
     /// Unassigned packets (as of RFC4880).
     Unknown(u8),
     /// Experimental packets.
@@ -116,6 +118,7 @@ impl From<u8> for Tag {
             18 => SEIP,
             19 => MDC,
             20 => AED,
+            21 => Padding,
             60..=63 => Private(u),
             _ => Unknown(u),
         }
@@ -150,6 +153,7 @@ impl From<&Tag> for u8 {
             Tag::SEIP => 18,
             Tag::MDC => 19,
             Tag::AED => 20,
+            Tag::Padding => 21,
             Tag::Private(x) => *x,
             Tag::Unknown(x) => *x,
         }
@@ -209,6 +213,8 @@ impl fmt::Display for Tag {
                 f.write_str("Modification Detection Code Packet"),
             Tag::AED =>
                 f.write_str("AEAD Encrypted Data Packet"),
+            Tag::Padding =>
+                f.write_str("Padding Packet"),
             Tag::Private(u) =>
                 f.write_fmt(format_args!("Private/Experimental Packet {}", u)),
             Tag::Unknown(u) =>
@@ -217,7 +223,7 @@ impl fmt::Display for Tag {
     }
 }
 
-const PACKET_TAG_VARIANTS: [Tag; 18] = [
+const PACKET_TAG_VARIANTS: [Tag; 19] = [
     Tag::PKESK,
     Tag::Signature,
     Tag::SKESK,
@@ -236,6 +242,7 @@ const PACKET_TAG_VARIANTS: [Tag; 18] = [
     Tag::SEIP,
     Tag::MDC,
     Tag::AED,
+    Tag::Padding,
 ];
 
 #[cfg(test)]
