@@ -213,6 +213,7 @@ use crate::{
     },
     packet::signature::Signature3,
     packet::signature::Signature4,
+    packet::signature::Signature6,
     packet::prelude::*,
     Packet,
     Fingerprint,
@@ -1386,6 +1387,7 @@ impl Signature {
         match version {
             3 => Signature3::parse(php),
             4 => Signature4::parse(php),
+            6 => Signature6::parse(php),
             _ => {
                 t!("Ignoring version {} packet.", version);
                 php.fail("unknown version")
@@ -1398,6 +1400,7 @@ impl Signature {
         -> Result<()>
         where T: BufferedReader<C>, C: fmt::Debug + Send + Sync
     {
+        // XXX: Support other versions.
         Signature4::plausible(bio, header)
     }
 
@@ -1509,6 +1512,52 @@ impl Signature {
         }
 
         Ok(pp)
+    }
+}
+
+impl Signature6 {
+    // Parses a signature packet.
+    fn parse(mut php: PacketHeaderParser) -> Result<PacketParser> {
+        let indent = php.recursion_depth();
+        tracer!(TRACE, "Signature6::parse", indent);
+
+        make_php_try!(php);
+
+        let typ = php_try!(php.parse_u8("type"));
+        let pk_algo: PublicKeyAlgorithm = php_try!(php.parse_u8("pk_algo")).into();
+        let hash_algo: HashAlgorithm =
+            php_try!(php.parse_u8("hash_algo")).into();
+        let hashed_area_len = php_try!(php.parse_be_u32("hashed_area_len"));
+        let hashed_area
+            = php_try!(SubpacketArea::parse(&mut php,
+                                            hashed_area_len as usize,
+                                            hash_algo));
+        let unhashed_area_len = php_try!(php.parse_be_u32("unhashed_area_len"));
+        let unhashed_area
+            = php_try!(SubpacketArea::parse(&mut php,
+                                            unhashed_area_len as usize,
+                                            hash_algo));
+        let digest_prefix1 = php_try!(php.parse_u8("digest_prefix1"));
+        let digest_prefix2 = php_try!(php.parse_u8("digest_prefix2"));
+        if ! pk_algo.for_signing() {
+            return php.fail("not a signature algorithm");
+        }
+        let salt_len = php_try!(php.parse_u8("salt_len")) as usize;
+        let salt = php_try!(php.parse_bytes("salt", salt_len));
+        let mpis = php_try!(
+            crypto::mpi::Signature::_parse(pk_algo, &mut php));
+
+        let typ = typ.into();
+        let sig = php_try!(Signature6::new(
+            typ, pk_algo, hash_algo,
+            hashed_area,
+            unhashed_area,
+            [digest_prefix1, digest_prefix2],
+            salt,
+            mpis));
+        let pp = php.ok(sig.into())?;
+
+        Signature::parse_finish(indent, pp, typ, hash_algo)
     }
 }
 
