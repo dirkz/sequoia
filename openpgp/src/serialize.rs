@@ -1974,6 +1974,7 @@ impl<P: key::KeyParts, R: key::KeyRole> Marshal for Key<P, R> {
     fn serialize(&self, o: &mut dyn io::Write) -> Result<()> {
         match self {
             Key::V4(ref p) => p.serialize(o),
+            Key::V6(ref p) => p.serialize(o),
         }
     }
 }
@@ -1982,16 +1983,26 @@ impl<P: key::KeyParts, R: key::KeyRole> MarshalInto for Key<P, R> {
     fn serialized_len(&self) -> usize {
         match self {
             Key::V4(ref p) => p.serialized_len(),
+            Key::V6(ref p) => p.serialized_len(),
         }
     }
 
     fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
         match self {
             Key::V4(ref p) => p.serialize_into(buf),
+            Key::V6(ref p) => p.serialize_into(buf),
         }
     }
 }
 
+impl<P: key::KeyParts, R: key::KeyRole> NetLength for Key<P, R> {
+    fn net_len(&self) -> usize {
+        match self {
+            Key::V4(ref p) => p.net_len(),
+            Key::V6(ref p) => p.net_len(),
+        }
+    }
+}
 impl<P, R> seal::Sealed for Key4<P, R>
     where P: key::KeyParts,
           R: key::KeyRole,
@@ -2072,6 +2083,117 @@ impl<P, R> NetLength for Key4<P, R>
 }
 
 impl<P, R> MarshalInto for Key4<P, R>
+    where P: key::KeyParts,
+          R: key::KeyRole,
+{
+    fn serialized_len(&self) -> usize {
+        self.net_len()
+    }
+
+    fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        generic_serialize_into(self, MarshalInto::serialized_len(self), buf)
+    }
+}
+
+impl<P, R> seal::Sealed for Key6<P, R>
+    where P: key::KeyParts,
+          R: key::KeyRole,
+{}
+
+impl<P, R> Marshal for Key6<P, R>
+    where P: key::KeyParts,
+          R: key::KeyRole,
+{
+    fn serialize(&self, o: &mut dyn io::Write) -> Result<()> {
+        let have_secret_key = P::significant_secrets() && self.has_secret();
+
+        write_byte(o, 6)?; // Version.
+        write_be_u32(o, self.creation_time_raw().into())?;
+        write_byte(o, self.pk_algo().into())?;
+        write_be_u32(o, self.mpis().serialized_len() as u32)?;
+        self.mpis().serialize(o)?;
+
+        if have_secret_key {
+            use crypto::mpi::SecretKeyChecksum;
+            match self.optional_secret().unwrap() {
+                SecretKeyMaterial::Unencrypted(u) => u.map(|mpis| {
+                    write_byte(o, 0)?; // S2K usage.
+                    mpis.serialize(o)
+                })?,
+                SecretKeyMaterial::Encrypted(e) => {
+                    if let (Some(aead_algo), Some(aead_iv)) =
+                        (e.aead_algo(), e.aead_iv())
+                    {
+                        o.write_all(&[
+                            253, // S2K usage.
+                            (1 + 1 + 1 + e.s2k().serialized_len() + aead_iv.len())
+                                .try_into().unwrap_or(0),
+                            e.algo().into(),
+                            aead_algo.into(),
+                            e.s2k().serialized_len().try_into().unwrap_or(0),
+                        ])?;
+                        e.s2k().serialize(o)?;
+                        o.write_all(aead_iv)?;
+                        o.write_all(e.raw_ciphertext())?;
+                    } else {
+                        // S2K usage.
+                        o.write_all(&[
+                            match e.checksum() {
+                                Some(SecretKeyChecksum::SHA1) => 254,
+                                Some(SecretKeyChecksum::Sum16) => 255,
+                                None => return Err(Error::InvalidOperation(
+                                    "In Key6 packets, encrypted secret keys \
+                                     must be checksummed".into()).into()),
+                            },
+                            (1 + 1 + e.s2k().serialized_len())
+                                .try_into().unwrap_or(0),
+                            e.algo().into(),
+                            e.s2k().serialized_len().try_into().unwrap_or(0),
+                        ])?;
+                        e.s2k().serialize(o)?;
+                        o.write_all(e.raw_ciphertext())?;
+                    }
+                },
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<P, R> NetLength for Key6<P, R>
+    where P: key::KeyParts,
+          R: key::KeyRole,
+{
+    fn net_len(&self) -> usize {
+        let have_secret_key = P::significant_secrets() && self.has_secret();
+
+        1 // Version.
+            + 4 // Creation time.
+            + 1 // PK algo.
+            + 4 // Size of the public key material.
+            + self.mpis().serialized_len()
+            + if have_secret_key {
+                1 // S2K method octet.
+                    + match self.optional_secret().unwrap() {
+                        SecretKeyMaterial::Unencrypted(u) =>
+                            u.map(|mpis| mpis.serialized_len()),
+                        SecretKeyMaterial::Encrypted(e) =>
+                            1 // Parameter length octet.
+                            + 1 // Cipher octet
+                            + if e.aead_algo().is_some() { 1 } else { 0 }
+                            + 1 // S2K length octet
+                            + e.s2k().serialized_len()
+                            + e.aead_iv().map(|iv| iv.len()).unwrap_or(0)
+                            + e.raw_ciphertext().len(),
+                }
+            } else {
+                0
+            }
+    }
+}
+
+impl<P, R> MarshalInto for Key6<P, R>
     where P: key::KeyParts,
           R: key::KeyRole,
 {

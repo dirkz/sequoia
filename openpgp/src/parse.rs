@@ -649,8 +649,66 @@ impl<'a> PacketHeaderParser<'a> {
     fn recursion_depth(&self) -> isize {
         self.path.len() as isize - 1
     }
+
+    /// Marks the start of a variable-sized field `name` of length
+    /// `len`.
+    ///
+    /// After parsing the variable-sized field, hand the returned
+    /// object to [`PacketHeaderParser::variable_sized_field_end`].
+    fn variable_sized_field_start<L>(&self, name: &'static str, len: L)
+                                     -> VariableSizedField
+    where
+        L: Into<u32>,
+    {
+        VariableSizedField {
+            name,
+            start: self.reader.total_out().try_into()
+                .expect("offsets in packet headers cannot exceed u32"),
+            length: len.into(),
+        }
+    }
+
+    /// Returns the remaining bytes in a variable-sized field.
+    fn variable_sized_field_remaining(&self, f: &VariableSizedField) -> usize {
+        let current: u32 = self.reader.total_out().try_into()
+            .expect("offsets in packet headers cannot exceed u32");
+        f.length.saturating_sub(current - f.start) as usize
+    }
+
+    /// Marks the start of a variable-sized field and checks whether
+    /// the correct amount of data has been consumed.
+    fn variable_sized_field_end(&self, f: VariableSizedField) -> Result<()>
+    {
+        let l = u32::try_from(self.reader.total_out())
+            .expect("offsets in packet headers cannot exceed u32")
+            - f.start;
+
+        use std::cmp::Ordering;
+        match l.cmp(&f.length) {
+            Ordering::Less => Err(Error::MalformedPacket(format!(
+                "{}: length {} but only consumed {} bytes",
+                f.name, f.length, l)).into()),
+            Ordering::Equal => Ok(()),
+            Ordering::Greater => Err(Error::MalformedPacket(format!(
+                "{}: length {} but consumed {} bytes",
+                f.name, f.length, l)).into()),
+        }
+    }
 }
 
+/// Represents a variable-sized field in a packet header.
+#[must_use]
+struct VariableSizedField {
+    /// Name of the field.
+    name: &'static str,
+
+    /// The amount of bytes consumed in self.reader at the start of
+    /// the field.
+    start: u32,
+
+    /// The expected length of the variable-sized field.
+    length: u32,
+}
 
 /// What the hash in the Cookie is for.
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -1038,6 +1096,11 @@ impl S2K {
     fn parse_v4(php: &mut PacketHeaderParser<'_>)
                                            -> Result<Self> {
         Self::parse_common(php, None)
+    }
+
+    /// Reads an S2K from `php` with explicit S2K length.
+    fn parse_v6(php: &mut PacketHeaderParser, s2k_len: u8) -> Result<Self> {
+        Self::parse_common(php, Some(s2k_len))
     }
 
     /// Reads an S2K from `php` with optional explicit S2K length.
@@ -2341,6 +2404,7 @@ impl Key<key::UnspecifiedParts, key::UnspecifiedRole>
 
         match version {
             4 => Key4::parse(php),
+            6 => Key6::parse(php),
             _ => php.fail("unknown version"),
         }
     }
@@ -2350,6 +2414,7 @@ impl Key<key::UnspecifiedParts, key::UnspecifiedRole>
         -> Result<()>
         where T: BufferedReader<C>, C: fmt::Debug + Send + Sync
     {
+        // XXX support other versions.
         Key4::plausible(bio, header)
     }
 }
@@ -2519,6 +2584,190 @@ impl Key4<key::UnspecifiedParts, key::UnspecifiedRole>
             Err(Error::MalformedPacket("Invalid or unsupported data".into())
                 .into())
         }
+    }
+}
+
+// Key6::parse doesn't actually use the Key6 type parameters.  So, we
+// can just set them to anything.  This avoids the caller having to
+// set them to something.
+impl Key6<key::UnspecifiedParts, key::UnspecifiedRole>
+{
+    /// Parses the body of a public key, public subkey, secret key or
+    /// secret subkey packet.
+    fn parse(mut php: PacketHeaderParser) -> Result<PacketParser> {
+        tracer!(TRACE, "Key6::parse", php.recursion_depth());
+        make_php_try!(php);
+        let tag = php.header.ctb().tag();
+        assert!(tag == Tag::Reserved
+                || tag == Tag::PublicKey
+                || tag == Tag::PublicSubkey
+                || tag == Tag::SecretKey
+                || tag == Tag::SecretSubkey);
+
+        let creation_time = php_try!(php.parse_be_u32("creation_time"));
+        let pk_algo: PublicKeyAlgorithm = php_try!(php.parse_u8("pk_algo")).into();
+
+        let public_len = php_try!(php.parse_be_u32("public_len"));
+        let public_mpis =
+            php.variable_sized_field_start("public_mpis", public_len);
+        let mpis = php_try!(PublicKey::_parse(pk_algo, &mut php));
+        php_try!(php.variable_sized_field_end(public_mpis));
+
+        let secret = if let Ok(s2k_usage) = php.parse_u8("s2k_usage") {
+            use crypto::mpi;
+            let sec = match s2k_usage {
+                // Unencrypted secrets.
+                0 => {
+                    let sec = php_try!(
+                        mpi::SecretKeyMaterial::_parse(
+                            pk_algo, &mut php, None));
+                    sec.into()
+                },
+
+                // Encrypted & MD5 for key derivation: unsupported.
+                //
+                // XXX: Technically, we could/should parse them, then
+                // fail later.  But, this limitation has been with us
+                // since the beginning, and no-one complained.
+                1..=252 => {
+                    return php.fail("unsupported secret key encryption");
+                },
+
+                // AEAD encrypted secrets.
+                253 => {
+                    let parameters_len =
+                        php_try!(php.parse_u8("parameters_len"));
+                    let parameters =
+                        php.variable_sized_field_start("parameters",
+                                                       parameters_len);
+                    let sym_algo: SymmetricAlgorithm =
+                        php_try!(php.parse_u8("sym_algo")).into();
+
+                    let aead_algo: AEADAlgorithm =
+                        php_try!(php.parse_u8("aead_algo")).into();
+
+                    let s2k_len = php_try!(php.parse_u8("s2k_len"));
+                    let s2k_params =
+                        php.variable_sized_field_start("s2k_params", s2k_len);
+                    let s2k = php_try!(S2K::parse_v6(&mut php, s2k_len as _));
+                    php_try!(php.variable_sized_field_end(s2k_params));
+
+                    let aead_iv = php_try!(php.parse_bytes(
+                        "aead_iv",
+                        php.variable_sized_field_remaining(&parameters)))
+                        .into();
+                    php_try!(php.variable_sized_field_end(parameters));
+
+                    let cipher =
+                        php_try!(php.parse_bytes_eof("encrypted_mpis"))
+                        .into_boxed_slice();
+
+                    crate::packet::key::Encrypted::new_aead(
+                        s2k, sym_algo, aead_algo, aead_iv, cipher).into()
+                },
+
+                // Encrypted secrets.
+                254 | 255 => {
+                    let parameters_len =
+                        php_try!(php.parse_u8("parameters_len"));
+                    let parameters =
+                        php.variable_sized_field_start("parameters",
+                                                       parameters_len);
+                    let sym_algo: SymmetricAlgorithm =
+                        php_try!(php.parse_u8("sym_algo")).into();
+
+                    let s2k_len = php_try!(php.parse_u8("s2k_len"));
+                    let s2k_params =
+                        php.variable_sized_field_start("s2k_params", s2k_len);
+                    let s2k = php_try!(S2K::parse_v6(&mut php, s2k_len as _));
+                    php_try!(php.variable_sized_field_end(s2k_params));
+
+                    // The "IV" is part of the sized parameter field.
+                    let cfb_iv = php_try!(php.parse_bytes(
+                        "cfb_iv",
+                        php.variable_sized_field_remaining(&parameters)));
+                    php_try!(php.variable_sized_field_end(parameters));
+
+                    let cipher =
+                        php_try!(php.parse_bytes_eof("encrypted_mpis"));
+
+                    // But we store "IV" and ciphertext as one.
+                    let mut combined_ciphertext = cfb_iv;
+                    combined_ciphertext.extend_from_slice(&cipher);
+
+                    crate::packet::key::Encrypted::new_raw(
+                        s2k, sym_algo,
+                        if s2k_usage == 254 {
+                            Some(mpi::SecretKeyChecksum::SHA1)
+                        } else {
+                            Some(mpi::SecretKeyChecksum::Sum16)
+                        },
+                        Ok(combined_ciphertext.into())).into()
+                },
+            };
+
+            Some(sec)
+        } else {
+            None
+        };
+
+        let have_secret = secret.is_some();
+        if have_secret {
+            if tag == Tag::PublicKey || tag == Tag::PublicSubkey {
+                return php.error(Error::MalformedPacket(
+                    format!("Unexpected secret key found in {:?} packet", tag)
+                ).into());
+            }
+        } else if tag == Tag::SecretKey || tag == Tag::SecretSubkey {
+            return php.error(Error::MalformedPacket(
+                format!("Expected secret key in {:?} packet", tag)
+            ).into());
+        }
+
+        fn k<R>(creation_time: u32,
+                pk_algo: PublicKeyAlgorithm,
+                mpis: PublicKey)
+            -> Result<Key6<key::PublicParts, R>>
+            where R: key::KeyRole
+        {
+            Key6::make(creation_time, pk_algo, mpis, None)
+        }
+        fn s<R>(creation_time: u32,
+                pk_algo: PublicKeyAlgorithm,
+                mpis: PublicKey,
+                secret: SecretKeyMaterial)
+            -> Result<Key6<key::SecretParts, R>>
+            where R: key::KeyRole
+        {
+            Key6::make(creation_time, pk_algo, mpis, Some(secret))
+        }
+
+        let tag = php.header.ctb().tag();
+
+        let p : Packet = match tag {
+            // For the benefit of Key::from_bytes.
+            Tag::Reserved => if have_secret {
+                Packet::SecretKey(
+                    php_try!(s(creation_time, pk_algo, mpis, secret.unwrap()))
+                        .into())
+            } else {
+                Packet::PublicKey(
+                    php_try!(k(creation_time, pk_algo, mpis)).into())
+            },
+            Tag::PublicKey => Packet::PublicKey(
+                php_try!(k(creation_time, pk_algo, mpis)).into()),
+            Tag::PublicSubkey => Packet::PublicSubkey(
+                php_try!(k(creation_time, pk_algo, mpis)).into()),
+            Tag::SecretKey => Packet::SecretKey(
+                php_try!(s(creation_time, pk_algo, mpis, secret.unwrap()))
+                    .into()),
+            Tag::SecretSubkey => Packet::SecretSubkey(
+                php_try!(s(creation_time, pk_algo, mpis, secret.unwrap()))
+                    .into()),
+            _ => unreachable!(),
+        };
+
+        php.ok(p)
     }
 }
 

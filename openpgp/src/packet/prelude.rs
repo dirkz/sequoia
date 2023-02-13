@@ -45,6 +45,7 @@ pub use crate::packet::{
     aed::AED1,
     key,
     key::Key4,
+    key::Key6,
     key::SecretKeyMaterial,
     one_pass_sig::OnePassSig3,
     pkesk::PKESK3,

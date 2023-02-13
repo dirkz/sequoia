@@ -188,6 +188,7 @@ pub mod one_pass_sig;
 pub mod key;
 use key::{
     Key4,
+    Key6,
     SecretKeyMaterial
 };
 mod marker;
@@ -1545,6 +1546,9 @@ impl From<SKESK> for Packet {
 pub enum Key<P: key::KeyParts, R: key::KeyRole> {
     /// A version 4 `Key` packet.
     V4(Key4<P, R>),
+
+    /// A version 6 `Key` packet.
+    V6(Key6<P, R>),
 }
 assert_send_and_sync!(Key<P, R> where P: key::KeyParts, R: key::KeyRole);
 
@@ -1561,6 +1565,7 @@ impl<P, R> Clone for Key<P, R>
     fn clone(&self) -> Self {
         match self {
             Key::V4(key) => Key::V4(key.clone()),
+            Key::V6(key) => Key::V6(key.clone()),
         }
     }
 }
@@ -1569,6 +1574,7 @@ impl<P: key::KeyParts, R: key::KeyRole> fmt::Display for Key<P, R> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Key::V4(k) => k.fmt(f),
+            Key::V6(k) => k.fmt(f),
         }
     }
 }
@@ -1578,6 +1584,7 @@ impl<P: key::KeyParts, R: key::KeyRole> Key<P, R> {
     pub fn version(&self) -> u8 {
         match self {
             Key::V4(_) => 4,
+            Key::V6(_) => 6,
         }
     }
 
@@ -1593,6 +1600,11 @@ impl<P: key::KeyParts, R: key::KeyRole> Key<P, R> {
     {
         match (self, b) {
             (Key::V4(a), Key::V4(b)) => a.public_cmp(b),
+            (Key::V6(a), Key::V6(b)) => a.public_cmp(b),
+            // XXX: is that okay?
+            (Key::V4(_), Key::V6(_)) => std::cmp::Ordering::Less,
+            (Key::V6(_), Key::V4(_)) => std::cmp::Ordering::Greater,
+
         }
     }
 
@@ -1684,6 +1696,7 @@ impl<R: key::KeyRole> Key<key::SecretParts, R> {
     pub fn into_keypair(self) -> Result<KeyPair> {
         match self {
             Key::V4(k) => k.into_keypair(),
+            Key::V6(k) => k.into_keypair(),
         }
     }
 
@@ -1745,6 +1758,7 @@ impl<R: key::KeyRole> Key<key::SecretParts, R> {
     {
         match self {
             Key::V4(k) => Ok(Key::V4(k.decrypt_secret(password)?)),
+            Key::V6(k) => Ok(Key::V6(k.decrypt_secret(password)?)),
         }
     }
 
@@ -1828,11 +1842,33 @@ impl<R: key::KeyRole> Key<key::SecretParts, R> {
     {
         match self {
             Key::V4(k) => Ok(Key::V4(k.encrypt_secret(password)?)),
+            Key::V6(k) => Ok(Key::V6(k.encrypt_secret(password)?)),
         }
     }
 }
 
 impl<R: key::KeyRole> Key4<key::SecretParts, R> {
+    /// Creates a new key pair from a secret `Key` with an unencrypted
+    /// secret key.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the secret key is encrypted.  You can use
+    /// [`Key::decrypt_secret`] to decrypt a key.
+    pub fn into_keypair(self) -> Result<KeyPair> {
+        let (key, secret) = self.take_secret();
+        let secret = match secret {
+            SecretKeyMaterial::Unencrypted(secret) => secret,
+            SecretKeyMaterial::Encrypted(_) =>
+                return Err(Error::InvalidArgument(
+                    "secret key material is encrypted".into()).into()),
+        };
+
+        KeyPair::new(key.role_into_unspecified().into(), secret)
+    }
+}
+
+impl<R: key::KeyRole> Key6<key::SecretParts, R> {
     /// Creates a new key pair from a secret `Key` with an unencrypted
     /// secret key.
     ///
@@ -1867,6 +1903,10 @@ macro_rules! impl_common_secret_functions {
                         let (k, s) = k.take_secret();
                         (k.into(), s)
                     },
+                    Key::V6(k) => {
+                        let (k, s) = k.take_secret();
+                        (k.into(), s)
+                    },
                 }
             }
 
@@ -1881,6 +1921,10 @@ macro_rules! impl_common_secret_functions {
                         let (k, s) = k.add_secret(secret);
                         (k.into(), s)
                     },
+                    Key::V6(k) => {
+                        let (k, s) = k.add_secret(secret);
+                        (k.into(), s)
+                    },
                 }
             }
 
@@ -1889,6 +1933,7 @@ macro_rules! impl_common_secret_functions {
             {
                 match self {
                     Key::V4(k) => k.steal_secret(),
+                    Key::V6(k) => k.steal_secret(),
                 }
             }
         }
@@ -1908,6 +1953,10 @@ impl<R: key::KeyRole> Key<key::SecretParts, R> {
                 let (k, s) = k.take_secret();
                 (k.into(), s)
             },
+            Key::V6(k) => {
+                let (k, s) = k.take_secret();
+                (k.into(), s)
+            },
         }
     }
 
@@ -1920,18 +1969,62 @@ impl<R: key::KeyRole> Key<key::SecretParts, R> {
                 let (k, s) = k.add_secret(secret);
                 (k.into(), s)
             },
+            Key::V6(k) => {
+                let (k, s) = k.add_secret(secret);
+                (k.into(), s)
+            },
         }
     }
 }
 
+impl<P: key::KeyParts, R: key::KeyRole> Key<P, R> {
+    /// Computes and returns the `Key`'s `Fingerprint` and returns it as
+    /// a `KeyHandle`.
+    ///
+    /// See [Section 12.2 of RFC 4880].
+    ///
+    /// [Section 12.2 of RFC 4880]: https://tools.ietf.org/html/rfc4880#section-12.2
+    pub fn key_handle(&self) -> crate::KeyHandle {
+        match self {
+            Key::V4(k) => k.key_handle(),
+            Key::V6(k) => k.key_handle(),
+        }
+    }
+
+    /// Computes and returns the `Key`'s `Fingerprint`.
+    ///
+    /// See [Section 12.2 of RFC 4880].
+    ///
+    /// [Section 12.2 of RFC 4880]: https://tools.ietf.org/html/rfc4880#section-12.2
+    pub fn fingerprint(&self) -> crate::Fingerprint {
+        match self {
+            Key::V4(k) => k.fingerprint(),
+            Key::V6(k) => k.fingerprint(),
+        }
+    }
+
+    /// Computes and returns the `Key`'s `Key ID`.
+    ///
+    /// See [Section 12.2 of RFC 4880].
+    ///
+    /// [Section 12.2 of RFC 4880]: https://tools.ietf.org/html/rfc4880#section-12.2
+    pub fn keyid(&self) -> crate::KeyID {
+        match self {
+            Key::V4(k) => k.keyid(),
+            Key::V6(k) => k.keyid(),
+        }
+    }
+}
 
 // Trivial forwarder for singleton enum.
+// XXX
 impl<P: key::KeyParts, R: key::KeyRole> Deref for Key<P, R> {
     type Target = Key4<P, R>;
 
     fn deref(&self) -> &Self::Target {
         match self {
             Key::V4(ref p) => p,
+            Key::V6(p) => &p.common,
         }
     }
 }
@@ -1941,6 +2034,7 @@ impl<P: key::KeyParts, R: key::KeyRole> DerefMut for Key<P, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Key::V4(ref mut p) => p,
+            Key::V6(p) => &mut p.common,
         }
     }
 }

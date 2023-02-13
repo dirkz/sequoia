@@ -528,6 +528,7 @@ macro_rules! create_conversions {
 
 create_conversions!(Key<>);
 create_conversions!(Key4<>);
+create_conversions!(Key6<>);
 create_conversions!(KeyBundle<>);
 
 // A hack, since the type has to be an ident, which means that we

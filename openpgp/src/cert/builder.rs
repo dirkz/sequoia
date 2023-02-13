@@ -5,7 +5,8 @@ use crate::packet;
 use crate::packet::{
     Key,
     key::Key4,
-    key::KeyRole,
+    key::Key6,
+    key::UnspecifiedRole,
     key::SecretKey as KeySecretKey,
     key::SecretParts as KeySecretParts,
 };
@@ -151,10 +152,22 @@ impl CipherSuite {
         Ok(())
     }
 
-    fn generate_key<K, R>(self, flags: K)
-        -> Result<Key<KeySecretParts, R>>
-        where R: KeyRole,
-              K: AsRef<KeyFlags>,
+    fn generate_key<K>(self, flags: K, version: u8)
+        -> Result<Key<KeySecretParts, UnspecifiedRole>>
+        where K: AsRef<KeyFlags>,
+    {
+        match version {
+            4 => Ok(self.generate_v4_key(flags)?.into()),
+            6 => Ok(self.generate_v6_key(flags)?.into()),
+            n => Err(Error::InvalidArgument(
+                format!("Generating OpenPGP v{} keys not supported", n)
+            ).into()),
+        }
+    }
+
+    fn generate_v4_key<K>(self, flags: K)
+        -> Result<Key4<KeySecretParts, UnspecifiedRole>>
+        where K: AsRef<KeyFlags>,
     {
         use crate::types::Curve;
 
@@ -199,7 +212,58 @@ impl CipherSuite {
                             .into()),
                 }
             },
-        }.map(|key| key.into())
+        }
+    }
+
+    fn generate_v6_key<K>(self, flags: K)
+        -> Result<Key6<KeySecretParts, UnspecifiedRole>>
+        where K: AsRef<KeyFlags>,
+    {
+        use crate::types::Curve;
+
+        let flags = flags.as_ref();
+        let sign = flags.for_certification() || flags.for_signing()
+            || flags.for_authentication();
+        let encrypt = flags.for_transport_encryption()
+            || flags.for_storage_encryption();
+
+        match self {
+            CipherSuite::RSA2k =>
+                Key4::generate_rsa(2048),
+            CipherSuite::RSA3k =>
+                Key4::generate_rsa(3072),
+            CipherSuite::RSA4k =>
+                Key4::generate_rsa(4096),
+            CipherSuite::Cv25519 |
+            CipherSuite::P256 | CipherSuite::P384 | CipherSuite::P521 => {
+                let curve = match self {
+                    CipherSuite::Cv25519 if sign => Curve::Ed25519,
+                    CipherSuite::Cv25519 if encrypt => Curve::Cv25519,
+                    CipherSuite::Cv25519 => {
+                        return Err(Error::InvalidOperation(
+                            "No key flags set".into())
+                            .into());
+                    }
+                    CipherSuite::P256 => Curve::NistP256,
+                    CipherSuite::P384 => Curve::NistP384,
+                    CipherSuite::P521 => Curve::NistP521,
+                    _ => unreachable!(),
+                };
+
+                match (sign, encrypt) {
+                    (true, false) => Key4::generate_ecc(true, curve),
+                    (false, true) => Key4::generate_ecc(false, curve),
+                    (true, true) =>
+                        Err(Error::InvalidOperation(
+                            "Can't use key for encryption and signing".into())
+                            .into()),
+                    (false, false) =>
+                        Err(Error::InvalidOperation(
+                            "No key flags set".into())
+                            .into()),
+                }
+            },
+        }.map(Key6::from_common)
     }
 }
 
@@ -280,6 +344,7 @@ assert_send_and_sync!(KeyBlueprint);
 pub struct CertBuilder<'a> {
     creation_time: Option<std::time::SystemTime>,
     ciphersuite: CipherSuite,
+    version: u8,
     primary: KeyBlueprint,
     subkeys: Vec<(Option<SignatureBuilder>, KeyBlueprint)>,
     userids: Vec<(Option<SignatureBuilder>, packet::UserID)>,
@@ -332,6 +397,7 @@ impl CertBuilder<'_> {
         CertBuilder {
             creation_time: None,
             ciphersuite: CipherSuite::default(),
+            version: 4,
             primary: KeyBlueprint{
                 flags: KeyFlags::empty().set_certification(),
                 validity: None,
@@ -560,6 +626,44 @@ impl CertBuilder<'_> {
     pub fn set_exportable(mut self, exportable: bool) -> Self {
         self.exportable = exportable;
         self
+    }
+
+    /// Sets the OpenPGP version to generate keys for.
+    ///
+    /// Supported are version 4 and version 6 keys.  By default, we
+    /// generate OpenPGP v4 keys.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sequoia_openpgp as openpgp;
+    /// use openpgp::cert::prelude::*;
+    /// use openpgp::types::PublicKeyAlgorithm;
+    ///
+    /// # fn main() -> openpgp::Result<()> {
+    /// let (key, _) =
+    ///     CertBuilder::general_purpose(None, Some("alice@example.org"))
+    ///         .generate()?;
+    /// assert_eq!(key.primary_key().version(), 4);
+    ///
+    /// let (key, _) =
+    ///     CertBuilder::general_purpose(None, Some("alice@example.org"))
+    ///         .set_version(6)?
+    ///         .generate()?;
+    /// assert_eq!(key.primary_key().version(), 6);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_version(mut self, version: u8) -> Result<Self> {
+        match version {
+            4 => (),
+            6 => (),
+            n => return Err(Error::InvalidArgument(
+                format!("Generating OpenPGP v{} keys not supported", n)
+            ).into()),
+        }
+        self.version = version;
+        Ok(self)
     }
 
     /// Adds a User ID.
@@ -1505,7 +1609,8 @@ impl CertBuilder<'_> {
             let flags = &blueprint.flags;
             let mut subkey = blueprint.ciphersuite
                 .unwrap_or(self.ciphersuite)
-                .generate_key(flags)?;
+                .generate_key(flags, self.version)?
+                .role_into_subordinate();
             subkey.set_creation_time(creation_time)?;
 
             let sig = template.unwrap_or_else(
@@ -1562,7 +1667,9 @@ impl CertBuilder<'_> {
     {
         let mut key = self.primary.ciphersuite
             .unwrap_or(self.ciphersuite)
-            .generate_key(KeyFlags::empty().set_certification())?;
+            .generate_key(KeyFlags::empty().set_certification(),
+                          self.version)?
+            .role_into_primary();
         key.set_creation_time(creation_time)?;
         let sig = SignatureBuilder::new(SignatureType::DirectKey);
         let sig = Self::signature_common(

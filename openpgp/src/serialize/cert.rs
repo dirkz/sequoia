@@ -715,8 +715,14 @@ impl<'a> MarshalInto for TSK<'a> {
             if self.emit_stubs && (tag == Tag::PublicKey
                                    || tag == Tag::PublicSubkey) {
                 // Emit a GnuPG-style secret key stub.  The stub
-                // extends the public key by 8 bytes.
-                let l = key.parts_as_public().net_len() + 8;
+                // extends the public key by 8 bytes (plus 4 secret
+                // length octets for v6).
+                let l = key.parts_as_public().net_len()
+                    + match key.version() {
+                        4 => 8,
+                        6 => 12,
+                        _ => 0, // Serialization will fail anyway.
+                    };
                 return 1 // CTB
                     + BodyLength::Full(l as u32).serialized_len()
                     + l;
