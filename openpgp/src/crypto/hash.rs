@@ -38,7 +38,7 @@ use crate::packet::Key;
 use crate::packet::UserID;
 use crate::packet::UserAttribute;
 use crate::packet::key;
-use crate::packet::key::Key4;
+use crate::packet::key::{Key4, Key6};
 use crate::packet::Signature;
 use crate::packet::signature::{self, Signature3, Signature4};
 use crate::Result;
@@ -384,6 +384,18 @@ impl Hash for UserAttribute {
     }
 }
 
+impl<P, R> Hash for Key<P, R>
+    where P: key::KeyParts,
+          R: key::KeyRole,
+{
+    fn hash(&self, hash: &mut dyn Digest) {
+        match self {
+            Key::V4(k) => k.hash(hash),
+            Key::V6(k) => k.hash(hash),
+        }
+    }
+}
+
 impl<P, R> Hash for Key4<P, R>
     where P: key::KeyParts,
           R: key::KeyRole,
@@ -417,6 +429,48 @@ impl<P, R> Hash for Key4<P, R>
         header[4..8].copy_from_slice(&u32::from(
             Timestamp::try_from(self.creation_time())
             .unwrap_or_else(|_| Timestamp::from(0))).to_be_bytes());
+        hash.update(&header[..]);
+
+        // MPIs.
+        self.mpis().hash(hash);
+    }
+}
+
+impl<P, R> Hash for Key6<P, R>
+    where P: key::KeyParts,
+          R: key::KeyRole,
+{
+    fn hash(&self, hash: &mut dyn Digest) {
+        use crate::serialize::MarshalInto;
+
+        // We hash 15 bytes plus the MPIs.  But, the len doesn't
+        // include the tag (1 byte) or the length (4 bytes).
+        let len = (15 - 5) + self.mpis().serialized_len() as u32;
+
+        let mut header: Vec<u8> = Vec::with_capacity(9);
+
+        // Tag.
+        header.push(0x9b);
+
+        // Length (4 bytes, big endian).
+        header.extend_from_slice(&len.to_be_bytes());
+
+        // Version.
+        header.push(6);
+
+        // Creation time.
+        let creation_time: u32 =
+            Timestamp::try_from(self.creation_time())
+            .unwrap_or_else(|_| Timestamp::from(0))
+            .into();
+        header.extend_from_slice(&creation_time.to_be_bytes());
+
+        // Algorithm.
+        header.push(self.pk_algo().into());
+
+        // Length of all MPIs.
+        header.extend_from_slice(
+            &(self.mpis().serialized_len() as u32).to_be_bytes());
         hash.update(&header[..]);
 
         // MPIs.

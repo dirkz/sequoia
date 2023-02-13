@@ -34,6 +34,7 @@ pub use self::asymmetric::{Signer, Decryptor, KeyPair};
 pub(crate) mod backend;
 pub mod ecdh;
 pub mod hash;
+mod key;
 pub mod mem;
 pub mod mpi;
 mod s2k;

@@ -98,7 +98,11 @@ use crate::PublicKeyAlgorithm;
 use crate::seal;
 use crate::SymmetricAlgorithm;
 use crate::HashAlgorithm;
-use crate::types::{Curve, Timestamp};
+use crate::types::{
+    AEADAlgorithm,
+    Curve,
+    Timestamp,
+};
 use crate::crypto::S2K;
 use crate::Result;
 use crate::crypto::Password;
@@ -109,6 +113,8 @@ use crate::KeyHandle;
 use crate::policy::HashAlgoSecurity;
 
 mod conversions;
+mod v6;
+pub use v6::Key6;
 
 /// A marker trait that captures whether a `Key` definitely contains
 /// secret key material.
@@ -1843,6 +1849,8 @@ pub struct Encrypted {
     s2k: S2K,
     /// Symmetric algorithm used to encrypt the secret key material.
     algo: SymmetricAlgorithm,
+    /// AEAD algorithm and IV used to encrypt the secret key material.
+    aead: Option<(AEADAlgorithm, Box<[u8]>)>,
     /// Checksum method.
     checksum: Option<mpi::SecretKeyChecksum>,
     /// Encrypted MPIs prefixed with the IV.
@@ -1904,13 +1912,30 @@ impl Encrypted {
     }
 
     /// Creates a new encrypted key object.
+    pub fn new_aead(s2k: S2K,
+                    sym_algo: SymmetricAlgorithm,
+                    aead_algo: AEADAlgorithm,
+                    aead_iv: Box<[u8]>,
+                    ciphertext: Box<[u8]>)
+                    -> Self
+    {
+        Encrypted {
+            s2k,
+            algo: sym_algo,
+            aead: Some((aead_algo, aead_iv)),
+            checksum: None,
+            ciphertext: Ok(ciphertext),
+        }
+    }
+
+    /// Creates a new encrypted key object.
     pub(crate) fn new_raw(s2k: S2K, algo: SymmetricAlgorithm,
                           checksum: Option<mpi::SecretKeyChecksum>,
                           ciphertext: std::result::Result<Box<[u8]>,
                                                           Box<[u8]>>)
         -> Self
     {
-        Encrypted { s2k, algo, checksum, ciphertext }
+        Encrypted { s2k, algo, aead: None, checksum, ciphertext }
     }
 
     /// Returns the key derivation mechanism.
@@ -1922,6 +1947,17 @@ impl Encrypted {
     /// key material.
     pub fn algo(&self) -> SymmetricAlgorithm {
         self.algo
+    }
+
+    /// Returns the AEAD algorithm used to encrypt the secret key
+    /// material.
+    pub fn aead_algo(&self) -> Option<AEADAlgorithm> {
+        self.aead.as_ref().map(|(a, _iv)| *a)
+    }
+
+    /// Returns the AEAD IV used to encrypt the secret key material.
+    pub fn aead_iv(&self) -> Option<&[u8]> {
+        self.aead.as_ref().map(|(_a, iv)| &iv[..])
     }
 
     /// Returns the checksum method used to protect the encrypted
@@ -1991,9 +2027,14 @@ impl<P, R> Arbitrary for super::Key<P, R>
     where P: KeyParts, P: Clone,
           R: KeyRole, R: Clone,
           Key4<P, R>: Arbitrary,
+          Key6<P, R>: Arbitrary,
 {
     fn arbitrary(g: &mut Gen) -> Self {
-        Key4::arbitrary(g).into()
+        if <bool>::arbitrary(g) {
+            Key4::arbitrary(g).into()
+        } else {
+            Key6::arbitrary(g).into()
+        }
     }
 }
 
@@ -2814,7 +2855,21 @@ FwPoSAbbsLkNS/iNN2MDGAVYvezYn2QZ
                 }
             }
         }
+        Ok(())
+    }
 
+    #[test]
+    fn v6_key_fingerprint() -> Result<()> {
+        let p = Packet::from_bytes("-----BEGIN PGP ARMORED FILE-----
+
+xjcGY4d/4xYAAAAtCSsGAQQB2kcPAQEHQPlNp7tI1gph5WdwamWH0DMZmbudiRoI
+JC6thFQ9+JWj
+=SgmS
+-----END PGP ARMORED FILE-----")?;
+        let k: &Key<PublicParts, PrimaryRole> = p.downcast_ref().unwrap();
+        assert_eq!(k.fingerprint().to_string(),
+                   "4EADF309C6BC874AE04702451548F93F\
+                    96FA7A01D0A33B5AF7D4E379E0F9F8EE".to_string());
         Ok(())
     }
 }
