@@ -52,6 +52,7 @@ pub use crate::packet::{
     seip::SEIP1,
     signature,
     signature::Signature4,
+    signature::Signature6,
     signature::SignatureBuilder,
     skesk::SKESK4,
     skesk::SKESK5,

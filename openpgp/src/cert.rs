@@ -7541,7 +7541,28 @@ Pu1xwz57O4zo1VYf6TqHJzVC3OMvMUM2hhdecMUe5x6GorNaj6g=
         let sp = crate::policy::StandardPolicy::new();
         assert!(matches!(c.revocation_status(&sp, None),
                          RevocationStatus::Revoked(_)));
+        Ok(())
+    }
 
+    #[test]
+    fn v6_minimal_cert() -> Result<()> {
+        let p = &crate::policy::StandardPolicy::new();
+        let t = None; // XXX
+        let cert = Cert::from_bytes(
+            crate::tests::file("crypto-refresh/v6-minimal-cert.key"))?;
+        assert_eq!(cert.userids().count(), 0);
+        let vcert = cert.with_policy(p, t)?;
+        assert_eq!(vcert.keys().count(), 2);
+        assert_eq!(vcert.keys().for_signing().count(), 1);
+        assert_eq!(vcert.keys().for_transport_encryption().count(), 1);
+
+        let cert = Cert::from_bytes(
+            crate::tests::file("crypto-refresh/v6-minimal-secret.key")).unwrap();
+        assert_eq!(cert.userids().count(), 0);
+        let vcert = cert.with_policy(p, t)?;
+        assert_eq!(vcert.keys().count(), 2);
+        assert_eq!(vcert.keys().for_signing().count(), 1);
+        assert_eq!(vcert.keys().for_transport_encryption().count(), 1);
         Ok(())
     }
 }

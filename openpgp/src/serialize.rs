@@ -1689,6 +1689,7 @@ impl Marshal for Signature {
         match self {
             Signature::V3(ref s) => s.serialize(o),
             Signature::V4(ref s) => s.serialize(o),
+            Signature::V6(ref s) => s.serialize(o),
         }
     }
 
@@ -1696,6 +1697,7 @@ impl Marshal for Signature {
         match self {
             Signature::V3(ref s) => s.export(o),
             Signature::V4(ref s) => s.export(o),
+            Signature::V6(ref s) => s.export(o),
         }
     }
 }
@@ -1705,6 +1707,7 @@ impl MarshalInto for Signature {
         match self {
             Signature::V3(ref s) => s.serialized_len(),
             Signature::V4(ref s) => s.serialized_len(),
+            Signature::V6(ref s) => s.serialized_len(),
         }
     }
 
@@ -1712,6 +1715,7 @@ impl MarshalInto for Signature {
         match self {
             Signature::V3(ref s) => s.serialize_into(buf),
             Signature::V4(ref s) => s.serialize_into(buf),
+            Signature::V6(ref s) => s.serialize_into(buf),
         }
     }
 
@@ -1719,6 +1723,7 @@ impl MarshalInto for Signature {
         match self {
             Signature::V3(ref s) => s.export_into(buf),
             Signature::V4(ref s) => s.export_into(buf),
+            Signature::V6(ref s) => s.export_into(buf),
         }
     }
 
@@ -1726,6 +1731,7 @@ impl MarshalInto for Signature {
         match self {
             Signature::V3(ref s) => s.export_to_vec(),
             Signature::V4(ref s) => s.export_to_vec(),
+            Signature::V6(ref s) => s.export_to_vec(),
         }
     }
 }
@@ -1735,6 +1741,7 @@ impl NetLength for Signature {
         match self {
             Signature::V3(sig) => sig.net_len(),
             Signature::V4(sig) => sig.net_len(),
+            Signature::V6(sig) => sig.net_len(),
         }
     }
 }
@@ -1936,6 +1943,95 @@ impl NetLength for Signature4 {
 }
 
 impl MarshalInto for Signature4 {
+    fn serialized_len(&self) -> usize {
+        self.net_len()
+    }
+
+    fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        generic_serialize_into(self, MarshalInto::serialized_len(self), buf)
+    }
+
+    fn export_into(&self, buf: &mut [u8]) -> Result<usize> {
+        self.exportable()?;
+        self.serialize_into(buf)
+    }
+
+    fn export_to_vec(&self) -> Result<Vec<u8>> {
+        self.exportable()?;
+        self.to_vec()
+    }
+}
+
+impl seal::Sealed for Signature6 {}
+impl Marshal for Signature6 {
+    /// Writes a serialized version of the specified `Signature`
+    /// packet to `o`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidArgument`] if either the hashed-area
+    /// or the unhashed-area exceeds the size limit of 2^16.
+    ///
+    /// [`Error::InvalidArgument`]: Error::InvalidArgument
+    fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        assert_eq!(self.version(), 6);
+        write_byte(o, self.version())?;
+        write_byte(o, self.typ().into())?;
+        write_byte(o, self.pk_algo().into())?;
+        write_byte(o, self.hash_algo().into())?;
+
+        let l = self.hashed_area().serialized_len();
+        if l > u32::MAX as usize {
+            return Err(Error::InvalidArgument(
+                "Hashed area too large".into()).into());
+        }
+        write_be_u32(o, l as u32)?;
+        self.hashed_area().serialize(o)?;
+
+        let l = self.unhashed_area().serialized_len();
+        if l > u32::MAX as usize {
+            return Err(Error::InvalidArgument(
+                "Unhashed area too large".into()).into());
+        }
+        write_be_u32(o, l as u32)?;
+        self.unhashed_area().serialize(o)?;
+
+        write_byte(o, self.digest_prefix()[0])?;
+        write_byte(o, self.digest_prefix()[1])?;
+        write_byte(o, self.salt().len() as u8)?;
+        o.write_all(self.salt())?;
+
+        self.mpis().serialize(o)?;
+
+        Ok(())
+    }
+
+    fn export(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        self.exportable()?;
+        self.serialize(o)
+    }
+}
+
+impl NetLength for Signature6 {
+    fn net_len(&self) -> usize {
+        assert_eq!(self.version(), 6);
+
+        1 // Version.
+            + 1 // Signature type.
+            + 1 // PK algorithm.
+            + 1 // Hash algorithm.
+            + 4 // Hashed area size.
+            + self.hashed_area().serialized_len()
+            + 4 // Unhashed area size.
+            + self.unhashed_area().serialized_len()
+            + 2 // Hash prefix.
+            + 1 // Salt length.
+            + self.salt().len()
+            + self.mpis().serialized_len()
+    }
+}
+
+impl MarshalInto for Signature6 {
     fn serialized_len(&self) -> usize {
         self.net_len()
     }

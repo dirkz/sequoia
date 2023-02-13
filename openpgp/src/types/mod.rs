@@ -1525,6 +1525,22 @@ impl HashAlgorithm {
         }
     }
 
+    /// Returns the salt size for this algorithm.
+    ///
+    /// Version 6 signatures salt the hash, and the size of the hash
+    /// is dependent on the hash algorithm.
+    pub fn salt_size(&self) -> Result<usize> {
+        match self {
+            HashAlgorithm::SHA256 => Ok(16),
+            HashAlgorithm::SHA384 => Ok(24),
+            HashAlgorithm::SHA512 => Ok(32),
+            HashAlgorithm::SHA224 => Ok(16),
+            HashAlgorithm::SHA3_256 => Ok(16),
+            HashAlgorithm::SHA3_512 => Ok(32),
+            _ => Err(Error::UnsupportedHashAlgorithm(*self).into()),
+        }
+    }
+
     /// Returns an iterator over all valid variants.
     ///
     /// Returns an iterator over all known variants.  This does not
