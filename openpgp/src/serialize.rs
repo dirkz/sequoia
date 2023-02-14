@@ -2830,7 +2830,7 @@ impl Marshal for SKESK {
     fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
         match self {
             SKESK::V4(ref s) => s.serialize(o),
-            SKESK::V5(ref s) => s.serialize(o),
+            SKESK::V6(ref s) => s.serialize(o),
         }
     }
 }
@@ -2839,7 +2839,7 @@ impl NetLength for SKESK {
     fn net_len(&self) -> usize {
         match self {
             SKESK::V4(ref s) => s.net_len(),
-            SKESK::V5(ref s) => s.net_len(),
+            SKESK::V6(ref s) => s.net_len(),
         }
     }
 }
@@ -2848,7 +2848,7 @@ impl MarshalInto for SKESK {
     fn serialized_len(&self) -> usize {
         match self {
             SKESK::V4(ref s) => s.serialized_len(),
-            SKESK::V5(ref s) => s.serialized_len(),
+            SKESK::V6(ref s) => s.serialized_len(),
         }
     }
 
@@ -2856,7 +2856,7 @@ impl MarshalInto for SKESK {
         match self {
             SKESK::V4(s) =>
                 generic_serialize_into(s, MarshalInto::serialized_len(s), buf),
-            SKESK::V5(s) =>
+            SKESK::V6(s) =>
                 generic_serialize_into(s, MarshalInto::serialized_len(s), buf),
         }
     }
@@ -2892,36 +2892,44 @@ impl MarshalInto for SKESK4 {
     }
 }
 
-impl seal::Sealed for SKESK5 {}
-impl Marshal for SKESK5 {
+impl seal::Sealed for SKESK6 {}
+impl Marshal for SKESK6 {
     fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
-        write_byte(o, 5)?; // Version.
+        let s2k_len = self.s2k().serialized_len();
+
+        write_byte(o, 6)?; // Version.
+        // Parameter octet count.
+        write_byte(o, (1   // Symmetric algorithm.
+                       + 1 // AEAD mode.
+                       + 1 // S2K octet count.
+                       + s2k_len
+                       + self.aead_iv().len()) as u8)?;
         write_byte(o, self.symmetric_algo().into())?;
         write_byte(o, self.aead_algo().into())?;
+        // S2K octet count.
+        write_byte(o, s2k_len as u8)?;
         self.s2k().serialize(o)?;
-        if let Ok(iv) = self.aead_iv() {
-            o.write_all(iv)?;
-        }
-        o.write_all(self.raw_esk())?;
-        o.write_all(self.aead_digest())?;
+        o.write_all(self.aead_iv())?;
+        o.write_all(self.esk())?;
 
         Ok(())
     }
 }
 
-impl NetLength for SKESK5 {
+impl NetLength for SKESK6 {
     fn net_len(&self) -> usize {
         1 // Version.
+            + 1 // Parameter octet count.
             + 1 // Cipher algo.
             + 1 // AEAD algo.
+            + 1 // S2K octet count.
             + self.s2k().serialized_len()
-            + self.aead_iv().map(|iv| iv.len()).unwrap_or(0)
-            + self.raw_esk().len()
-            + self.aead_digest().len()
+            + self.aead_iv().len()
+            + self.esk().len()
     }
 }
 
-impl MarshalInto for SKESK5 {
+impl MarshalInto for SKESK6 {
     fn serialized_len(&self) -> usize {
         self.net_len()
     }
