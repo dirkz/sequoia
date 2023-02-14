@@ -3332,7 +3332,7 @@ impl SKESK {
         let version = php_try!(php.parse_u8("version"));
         match version {
             4 => SKESK4::parse(php),
-            5 => SKESK5::parse(php),
+            6 => SKESK6::parse(php),
             _ => php.fail("unknown version"),
         }
     }
@@ -3368,59 +3368,50 @@ impl SKESK4 {
     }
 }
 
-impl SKESK5 {
+impl SKESK6 {
     /// Parses the body of an SK-ESK packet.
     fn parse(mut php: PacketHeaderParser)
              -> Result<PacketParser>
     {
         tracer!(TRACE, "SKESK5::parse", php.recursion_depth());
         make_php_try!(php);
+
+        // Octet count of the following 5 fields.
+        let parameter_len = php_try!(php.parse_u8("parameter_len"));
+        if parameter_len < 1 + 1 + 1 + 2 /* S2K */ + 12 /* IV */ {
+            return php.fail("expected at least 16 parameter octets");
+        }
+
         let sym_algo: SymmetricAlgorithm =
             php_try!(php.parse_u8("sym_algo")).into();
         let aead_algo: AEADAlgorithm =
             php_try!(php.parse_u8("aead_algo")).into();
-        let s2k = php_try!(S2K::parse_v4(&mut php));
-        let s2k_supported = s2k.is_supported();
-        let iv_size = php_try!(aead_algo.nonce_size());
-        let digest_size = php_try!(aead_algo.digest_size());
 
-        // The rest of the packet is (potentially) the S2K
-        // parameters, the AEAD IV, the ESK, and the AEAD
-        // digest.  We don't know the size of the S2K
-        // parameters if the S2K method is not supported, and
-        // we don't know the size of the ESK.
-        let mut esk = php_try!(php.reader.steal_eof()
-                               .map_err(anyhow::Error::from));
-        let aead_iv = if s2k_supported && esk.len() >= iv_size {
-            // We know the S2K method, so the parameters have
-            // been parsed into the S2K object.  So, `esk`
-            // starts with iv_size bytes of IV.
-            let mut iv = esk;
-            esk = iv.split_off(iv_size);
-            iv
-        } else {
-            Vec::with_capacity(0) // A dummy value.
-        };
-
-        let l = esk.len();
-        let aead_digest = esk.split_off(l.saturating_sub(digest_size));
-        // Now fix the map.
-        if s2k_supported {
-            php.field("aead_iv", iv_size);
+        // The S2K object's length and the S2K.
+        let s2k_len = php_try!(php.parse_u8("s2k_len"));
+        if parameter_len < 1 + 1 + 1 + s2k_len + 12 /* IV */ {
+            return php.fail("S2K overflows parameter count");
         }
-        php.field("esk", esk.len());
-        php.field("aead_digest", aead_digest.len());
 
-        let skesk = php_try!(SKESK5::new_raw(
+        let s2k = php_try!(S2K::parse_v6(&mut php, s2k_len));
+
+        // And the IV.
+        let iv =
+            if let Some(iv_len) = parameter_len.checked_sub(1 + 1 + 1 + s2k_len) {
+                php_try!(php.parse_bytes("iv", iv_len as usize)).into()
+            } else {
+                return php.fail("IV overflows parameter count");
+            };
+
+        // Finally, the ESK including the AEAD tag.
+        let esk = php_try!(php.parse_bytes_eof("esk")).into();
+
+        let skesk = php_try!(SKESK6::new(
             sym_algo,
             aead_algo,
             s2k,
-            if s2k_supported {
-                Ok((aead_iv.into(), esk.into()))
-            } else {
-                Err(esk.into())
-            },
-            aead_digest.into_boxed_slice(),
+            iv,
+            esk,
         ));
 
         php.ok(skesk.into())

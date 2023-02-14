@@ -2998,7 +2998,7 @@ impl<'a, 'b> Encryptor2<'a, 'b> {
         // Write the SKESK packet(s).
         for password in self.passwords.iter() {
             if let Some(aead) = aead.as_ref() {
-                let skesk = SKESK5::with_password(self.sym_algo,
+                let skesk = SKESK6::with_password(self.sym_algo,
                                                   self.sym_algo,
                                                   aead.algo,
                                                   Default::default(),

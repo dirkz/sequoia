@@ -480,7 +480,7 @@ impl Deref for Packet {
             Packet::CompressedData(ref packet) => &packet.common,
             Packet::PKESK(ref packet) => &packet.common,
             Packet::SKESK(SKESK::V4(ref packet)) => &packet.common,
-            Packet::SKESK(SKESK::V5(ref packet)) => &packet.skesk4.common,
+            Packet::SKESK(SKESK::V6(ref packet)) => &packet.skesk4.common,
             Packet::SEIP(ref packet) => &packet.common,
             #[allow(deprecated)]
             Packet::MDC(ref packet) => &packet.common,
@@ -509,7 +509,7 @@ impl DerefMut for Packet {
             Packet::CompressedData(ref mut packet) => &mut packet.common,
             Packet::PKESK(ref mut packet) => &mut packet.common,
             Packet::SKESK(SKESK::V4(ref mut packet)) => &mut packet.common,
-            Packet::SKESK(SKESK::V5(ref mut packet)) => &mut packet.skesk4.common,
+            Packet::SKESK(SKESK::V6(ref mut packet)) => &mut packet.skesk4.common,
             Packet::SEIP(ref mut packet) => &mut packet.common,
             #[allow(deprecated)]
             Packet::MDC(ref mut packet) => &mut packet.common,
@@ -1292,10 +1292,10 @@ impl DerefMut for PKESK {
 pub enum SKESK {
     /// SKESK packet version 4.
     V4(self::skesk::SKESK4),
-    /// SKESK packet version 5.
+    /// SKESK packet version 6.
     ///
     /// This feature is [experimental](super#experimental-features).
-    V5(self::skesk::SKESK5),
+    V6(self::skesk::SKESK6),
 }
 assert_send_and_sync!(SKESK);
 
@@ -1304,7 +1304,7 @@ impl SKESK {
     pub fn version(&self) -> u8 {
         match self {
             SKESK::V4(_) => 4,
-            SKESK::V5(_) => 5,
+            SKESK::V6(_) => 6,
         }
     }
 }
