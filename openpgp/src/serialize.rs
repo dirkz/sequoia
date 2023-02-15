@@ -870,7 +870,7 @@ impl seal::Sealed for KeyID {}
 impl Marshal for KeyID {
     fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
         let raw = match self {
-            KeyID::V4(ref fp) => &fp[..],
+            KeyID::Long(ref fp) => &fp[..],
             KeyID::Invalid(ref fp) => &fp[..],
         };
         o.write_all(raw)?;
@@ -882,7 +882,7 @@ impl SerializeInto for KeyID {}
 impl MarshalInto for KeyID {
     fn serialized_len(&self) -> usize {
         match self {
-            KeyID::V4(_) => 8,
+            KeyID::Long(_) => 8,
             KeyID::Invalid(ref fp) => fp.len(),
         }
     }
@@ -1734,7 +1734,7 @@ impl Marshal for Signature3 {
             .map(|sp| sp.value())
         {
             match keyid {
-                KeyID::V4(bytes) => {
+                KeyID::Long(bytes) => {
                     assert_eq!(bytes.len(), 8);
                     o.write_all(&bytes[..])?;
                 }
