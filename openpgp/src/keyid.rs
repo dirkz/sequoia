@@ -61,8 +61,12 @@ use crate::Result;
 #[non_exhaustive]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum KeyID {
-    /// Lower 8 byte SHA-1 hash.
-    V4([u8;8]),
+    /// A long (8 bytes) key ID.
+    ///
+    /// For v4, this is the right-most 8 bytes of the v4 fingerprint.
+    /// For v6, this is the left-most 8 bytes of the v6 fingerprint.
+    Long([u8; 8]),
+
     /// Used for holding invalid keyids encountered during parsing
     /// e.g. wrong number of bytes.
     Invalid(Box<[u8]>),
@@ -123,7 +127,7 @@ impl From<KeyID> for Vec<u8> {
     fn from(id: KeyID) -> Self {
         let mut r = Vec::with_capacity(8);
         match id {
-            KeyID::V4(ref b) => r.extend_from_slice(b),
+            KeyID::Long(ref b) => r.extend_from_slice(b),
             KeyID::Invalid(ref b) => r.extend_from_slice(b),
         }
         r
@@ -148,7 +152,7 @@ impl From<&Fingerprint> for KeyID {
             Fingerprint::V4(fp) =>
                 KeyID::from_bytes(&fp[fp.len() - 8..]),
             Fingerprint::V6(fp) =>
-                KeyID::Invalid(fp.iter().cloned().collect()),
+                KeyID::from_bytes(&fp[..8]),
             Fingerprint::Invalid(fp) => {
                 KeyID::Invalid(fp.clone())
             }
@@ -162,7 +166,7 @@ impl From<Fingerprint> for KeyID {
             Fingerprint::V4(fp) =>
                 KeyID::from_bytes(&fp[fp.len() - 8..]),
             Fingerprint::V6(fp) =>
-                KeyID::Invalid(fp.into()),
+                KeyID::from_bytes(&fp[..8]),
             Fingerprint::Invalid(fp) => {
                 KeyID::Invalid(fp)
             }
@@ -202,7 +206,7 @@ impl KeyID {
     /// ```
     pub fn as_u64(&self) -> Result<u64> {
         match &self {
-            KeyID::V4(ref b) =>
+            KeyID::Long(ref b) =>
                 Ok(u64::from_be_bytes(*b)),
             KeyID::Invalid(_) =>
                 Err(Error::InvalidArgument("Invalid KeyID".into()).into()),
@@ -228,7 +232,7 @@ impl KeyID {
         if raw.len() == 8 {
             let mut keyid : [u8; 8] = Default::default();
             keyid.copy_from_slice(raw);
-            KeyID::V4(keyid)
+            KeyID::Long(keyid)
         } else {
             KeyID::Invalid(raw.to_vec().into_boxed_slice())
         }
@@ -251,7 +255,7 @@ impl KeyID {
     /// ```
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            KeyID::V4(ref id) => id,
+            KeyID::Long(ref id) => id,
             KeyID::Invalid(ref id) => id,
         }
     }
@@ -394,11 +398,11 @@ impl KeyID {
         let pretty = f.alternate();
 
         let raw = match self {
-            KeyID::V4(ref fp) => &fp[..],
+            KeyID::Long(ref fp) => &fp[..],
             KeyID::Invalid(ref fp) => &fp[..],
         };
 
-        // We currently only handle V4 Key IDs, which look like:
+        // We currently only handle long Key IDs, which look like:
         //
         //   AACB 3243 6300 52D9
         //
@@ -488,7 +492,7 @@ impl KeyID {
             (k, KeyHandle::KeyID(o)) => {
                 k == o
             },
-            (KeyID::V4(k), KeyHandle::Fingerprint(Fingerprint::V4(o))) => {
+            (KeyID::Long(k), KeyHandle::Fingerprint(Fingerprint::V4(o))) => {
                 // Avoid a heap allocation by embedding our
                 // knowledge of how a v4 key ID is derived from a
                 // v4 fingerprint:
@@ -497,6 +501,13 @@ impl KeyID {
                 // fingerprint.
                 &o[12..] == k
             },
+
+            (KeyID::Long(k), KeyHandle::Fingerprint(Fingerprint::V6(f))) => {
+                // A v6 key ID are the 8 left-most octets of a v6
+                // fingerprint.
+                k == &f[..8]
+            },
+
             (k, o) => {
                 k == &KeyID::from(o)
             },

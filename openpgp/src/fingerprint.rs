@@ -437,7 +437,7 @@ impl Fingerprint {
             (f, KeyHandle::Fingerprint(o)) => {
                 f == o
             },
-            (Fingerprint::V4(f), KeyHandle::KeyID(KeyID::V4(o))) => {
+            (Fingerprint::V4(f), KeyHandle::KeyID(KeyID::Long(o))) => {
                 // Avoid a heap allocation by embedding our
                 // knowledge of how a v4 key ID is derived from a
                 // v4 fingerprint:
@@ -447,7 +447,7 @@ impl Fingerprint {
                 &f[12..] == o
             },
 
-            (Fingerprint::V6(f), KeyHandle::KeyID(KeyID::V4(o))) => {
+            (Fingerprint::V6(f), KeyHandle::KeyID(KeyID::Long(o))) => {
                 // A v6 key ID are the 8 left-most octets of a v6
                 // fingerprint.
                 &f[..8] == o
