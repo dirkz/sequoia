@@ -1786,7 +1786,7 @@ impl Subpacket {
                 let version = php.parse_u8("version")?;
                 if let Some(expect_len) = match version {
                     4 => Some(1 + 20),
-                    5 => Some(1 + 32),
+                    6 => Some(1 + 32),
                     _ => None,
                 } {
                     if len != expect_len {
@@ -1812,7 +1812,7 @@ impl Subpacket {
                 let version = php.parse_u8("version")?;
                 if let Some(expect_len) = match version {
                     4 => Some(1 + 20),
-                    5 => Some(1 + 32),
+                    6 => Some(1 + 32),
                     _ => None,
                 } {
                     if len != expect_len {

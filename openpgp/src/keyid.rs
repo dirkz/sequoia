@@ -147,7 +147,7 @@ impl From<&Fingerprint> for KeyID {
         match fp {
             Fingerprint::V4(fp) =>
                 KeyID::from_bytes(&fp[fp.len() - 8..]),
-            Fingerprint::V5(fp) =>
+            Fingerprint::V6(fp) =>
                 KeyID::Invalid(fp.iter().cloned().collect()),
             Fingerprint::Invalid(fp) => {
                 KeyID::Invalid(fp.clone())
@@ -161,7 +161,7 @@ impl From<Fingerprint> for KeyID {
         match fp {
             Fingerprint::V4(fp) =>
                 KeyID::from_bytes(&fp[fp.len() - 8..]),
-            Fingerprint::V5(fp) =>
+            Fingerprint::V6(fp) =>
                 KeyID::Invalid(fp.into()),
             Fingerprint::Invalid(fp) => {
                 KeyID::Invalid(fp)
