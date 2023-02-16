@@ -8,6 +8,9 @@
 use crate::packet;
 use crate::Packet;
 
+mod v2;
+pub use v2::*;
+
 /// Holds an encrypted data packet.
 ///
 /// An encrypted data packet is a container.  See [Section 5.13 of RFC

@@ -120,6 +120,7 @@ use crate::{
         key,
         OnePassSig,
         PKESK,
+        SEIP,
         SKESK,
     },
     KeyHandle,
@@ -2429,10 +2430,10 @@ impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
                 }
             }
 
-            let sym_algo_hint = if let Packet::AED(ref aed) = pp.packet {
-                Some(aed.symmetric_algo())
-            } else {
-                None
+            let sym_algo_hint = match &pp.packet {
+                Packet::SEIP(SEIP::V2(seip)) => Some(seip.symmetric_algo()),
+                Packet::AED(aed) => Some(aed.symmetric_algo()),
+                _ => None,
             };
 
             match pp.packet {
@@ -4167,6 +4168,71 @@ xHUDBRY0WIQ+50WENDPP";
             .with_policy(&p, crate::frozen_time(), helper)?;
         assert!(v.message_processed());
         assert_eq!(v.helper_ref().good, 2);
+
+        Ok(())
+    }
+
+    /// This sample packet is from RFC9760.
+    #[test]
+    fn v6skesk_v2seip_aes128_ocb() -> Result<()> {
+        sample_skesk6_packet(
+            SymmetricAlgorithm::AES128,
+            AEADAlgorithm::OCB,
+            "password",
+            "crypto-refresh/v6skesk-aes128-ocb.pgp",
+            b"Hello, world!")
+    }
+
+    /// This sample packet is from RFC9760.
+    #[test]
+    fn v6skesk_v2seip_aes128_eax() -> Result<()> {
+        sample_skesk6_packet(
+            SymmetricAlgorithm::AES128,
+            AEADAlgorithm::EAX,
+            "password",
+            "crypto-refresh/v6skesk-aes128-eax.pgp",
+            b"Hello, world!")
+    }
+
+    /// This sample packet is from RFCXXX.
+    #[test]
+    fn v6skesk_v2seip_aes128_gcm() -> Result<()> {
+        sample_skesk6_packet(
+            SymmetricAlgorithm::AES128,
+            AEADAlgorithm::GCM,
+            "password",
+            "crypto-refresh/v6skesk-aes128-gcm.pgp",
+            b"Hello, world!")
+    }
+
+    fn sample_skesk6_packet(cipher: SymmetricAlgorithm,
+                            aead: AEADAlgorithm,
+                            password: &str,
+                            name: &str,
+                            plaintext: &[u8])
+                            -> Result<()> {
+        if ! (aead.is_supported()
+              && aead.supports_symmetric_algo(&cipher))
+        {
+            eprintln!("Skipping test vector {:?}...", name);
+            return Ok(());
+        }
+
+        eprintln!("Test vector {:?}...", name);
+
+        let p = &P::new();
+        let password: Password = String::from(password).into();
+
+        let h = VHelper::for_decryption(0, 0, 0, 0, vec![], vec![],
+                                        vec![password]);
+        let mut d = DecryptorBuilder::from_bytes(crate::tests::file(name))?
+            .with_policy(p, None, h)?;
+        assert!(d.message_processed());
+
+        let mut content = Vec::new();
+        d.read_to_end(&mut content).unwrap();
+        assert_eq!(&content, plaintext);
+
         Ok(())
     }
 }

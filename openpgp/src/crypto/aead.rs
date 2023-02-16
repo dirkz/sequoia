@@ -17,6 +17,7 @@ use crate::Result;
 use crate::crypto::SessionKey;
 use crate::seal;
 use crate::parse::Cookie;
+use crate::crypto::backend::{Backend, interface::Kdf};
 
 /// Minimum AEAD chunk size.
 ///
@@ -227,6 +228,87 @@ impl Schedule for AEDv1Schedule {
             // index.
             *o ^= index_be[i];
         }
+
+        fun(nonce, &ad)
+    }
+}
+
+const SEIP2AD_PREFIX_LEN: usize = 5;
+pub(crate) struct SEIPv2Schedule {
+    nonce: Box<[u8]>,
+    ad: [u8; SEIP2AD_PREFIX_LEN],
+    nonce_len: usize,
+}
+
+impl SEIPv2Schedule {
+    pub(crate) fn new(session_key: &SessionKey,
+                      sym_algo: SymmetricAlgorithm,
+                      aead: AEADAlgorithm,
+                      chunk_size: usize,
+                      salt: &[u8]) -> Result<(SessionKey, Self)>
+    {
+        if !(MIN_CHUNK_SIZE..=MAX_CHUNK_SIZE).contains(&chunk_size) {
+            return Err(Error::InvalidArgument(
+                format!("Invalid AEAD chunk size: {}", chunk_size)).into());
+        }
+
+        // Derive the message key and initialization vector.
+        let key_size = sym_algo.key_size()?;
+        // The NONCE size is NONCE_LEN - 8 bytes taken from the KDF.
+        let nonce_size = aead.nonce_size()? - 8;
+        let mut key_nonce: SessionKey =
+            vec![0; key_size + nonce_size].into();
+        let ad = [
+            0xd2, // Tag.
+            2,    // Version.
+            sym_algo.into(),
+            aead.into(),
+            chunk_size.trailing_zeros() as u8 - 6,
+        ];
+        Backend::hkdf_sha256(session_key, Some(salt), &ad, &mut key_nonce)?;
+        let key = Vec::from(&key_nonce[..key_size]).into();
+        let nonce = Vec::from(&key_nonce[key_size..]).into();
+
+        Ok((key, Self {
+            nonce,
+            ad,
+            nonce_len: aead.nonce_size()?,
+        }))
+    }
+}
+
+impl Schedule for SEIPv2Schedule {
+    fn next_chunk<F, R>(&self, index: u64, mut fun: F) -> R
+    where
+        F: FnMut(&[u8], &[u8]) -> R,
+    {
+        // The nonce is the NONCE (NONCE_LEN - 8 bytes taken from the
+        // KDF) concatenated with the chunk index.
+        let index_be: [u8; 8] = index.to_be_bytes();
+        let mut nonce_store = [0u8; MAX_NONCE_LEN];
+        let nonce = &mut nonce_store[..self.nonce_len];
+        nonce[..self.nonce.len()].copy_from_slice(&self.nonce);
+        nonce[self.nonce.len()..].copy_from_slice(&index_be);
+
+        fun(nonce, &self.ad)
+    }
+
+    fn final_chunk<F, R>(&self, index: u64, length: u64, mut fun: F) -> R
+    where
+        F: FnMut(&[u8], &[u8]) -> R,
+    {
+        // Prepare the associated data.
+        let mut ad = [0u8; SEIP2AD_PREFIX_LEN + 8];
+        ad[..SEIP2AD_PREFIX_LEN].copy_from_slice(&self.ad);
+        write_be_u64(&mut ad[SEIP2AD_PREFIX_LEN..], length);
+
+        // The nonce is the NONCE (NONCE_LEN - 8 bytes taken from the
+        // KDF) concatenated with the chunk index.
+        let index_be: [u8; 8] = index.to_be_bytes();
+        let mut nonce_store = [0u8; MAX_NONCE_LEN];
+        let nonce = &mut nonce_store[..self.nonce_len];
+        nonce[..self.nonce.len()].copy_from_slice(&self.nonce);
+        nonce[self.nonce.len()..].copy_from_slice(&index_be);
 
         fun(nonce, &ad)
     }
