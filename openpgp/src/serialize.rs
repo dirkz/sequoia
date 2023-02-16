@@ -3000,7 +3000,36 @@ impl MarshalInto for SKESK6 {
 
 impl seal::Sealed for SEIP {}
 impl Marshal for SEIP {
-    /// Writes a serialized version of the specified `SEIP`
+    fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        match self {
+            SEIP::V1(p) => p.serialize(o),
+            SEIP::V2(p) => p.serialize(o),
+        }
+    }
+}
+
+impl NetLength for SEIP {
+    fn net_len(&self) -> usize {
+        match self {
+            SEIP::V1(p) => p.net_len(),
+            SEIP::V2(p) => p.net_len(),
+        }
+    }
+}
+
+impl MarshalInto for SEIP {
+    fn serialized_len(&self) -> usize {
+        self.net_len()
+    }
+
+    fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        generic_serialize_into(self, MarshalInto::serialized_len(self), buf)
+    }
+}
+
+impl seal::Sealed for SEIP1 {}
+impl Marshal for SEIP1 {
+    /// Writes a serialized version of the specified `SEIP1`
     /// packet to `o`.
     ///
     /// # Errors
@@ -3011,7 +3040,7 @@ impl Marshal for SEIP {
     fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
         match self.body() {
             Body::Unprocessed(bytes) => {
-                o.write_all(&[self.version()])?;
+                o.write_all(&[1])?;
                 o.write_all(bytes)?;
                 Ok(())
             },
@@ -3022,7 +3051,7 @@ impl Marshal for SEIP {
     }
 }
 
-impl NetLength for SEIP {
+impl NetLength for SEIP1 {
     fn net_len(&self) -> usize {
         match self.body() {
             Body::Unprocessed(bytes) => 1 /* Version */ + bytes.len(),
@@ -3031,7 +3060,65 @@ impl NetLength for SEIP {
     }
 }
 
-impl MarshalInto for SEIP {
+impl MarshalInto for SEIP1 {
+    fn serialized_len(&self) -> usize {
+        self.net_len()
+    }
+
+    fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        generic_serialize_into(self, MarshalInto::serialized_len(self), buf)
+    }
+}
+
+impl SEIP2 {
+    /// Writes the headers of the `SEIP2` data packet to `o`.
+    fn serialize_headers(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        o.write_all(&[2, // Version.
+                      self.symmetric_algo().into(),
+                      self.aead().into(),
+                      self.chunk_size().trailing_zeros() as u8 - 6])?;
+        o.write_all(self.salt())?;
+        Ok(())
+    }
+}
+
+impl seal::Sealed for SEIP2 {}
+impl Marshal for SEIP2 {
+    /// Writes a serialized version of the specified `AED`
+    /// packet to `o`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidOperation` if this packet has children.
+    /// To construct an encrypted message, use
+    /// `serialize::stream::Encryptor`.
+    fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        match self.body() {
+            Body::Unprocessed(bytes) => {
+                self.serialize_headers(o)?;
+                o.write_all(bytes)?;
+                Ok(())
+            },
+            _ => Err(Error::InvalidOperation(
+                "Cannot encrypt, use serialize::stream::Encryptor".into())
+                     .into()),
+        }
+    }
+}
+
+impl NetLength for SEIP2 {
+    fn net_len(&self) -> usize {
+        match self.body() {
+            Body::Unprocessed(bytes) =>
+                4 // Headers.
+                + self.salt().len()
+                + bytes.len(),
+            _ => 0,
+        }
+    }
+}
+
+impl MarshalInto for SEIP2 {
     fn serialized_len(&self) -> usize {
         self.net_len()
     }

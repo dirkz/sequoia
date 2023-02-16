@@ -207,6 +207,7 @@ impl MessageValidator {
             Tag::SKESK => Token::SKESK,
             Tag::PKESK => Token::PKESK,
             Tag::SEIP if version == Some(1) => Token::SEIPv1,
+            Tag::SEIP if version == Some(2) => Token::SEIPv2,
             Tag::MDC => Token::MDC,
             Tag::AED => Token::AED,
             Tag::OnePassSig => Token::OPS,
