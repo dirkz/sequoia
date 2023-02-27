@@ -1003,6 +1003,11 @@ impl Marshal for crypto::mpi::PublicKey {
                 w.write_all(&[3u8, 1u8, u8::from(*hash), u8::from(*sym)])?;
             }
 
+            X25519 { u } => w.write_all(&u[..])?,
+            X448 { u } => w.write_all(&u[..])?,
+            Ed25519 { a } => w.write_all(&a[..])?,
+            Ed448 { a } => w.write_all(&a[..])?,
+
             Unknown { ref mpis, ref rest } => {
                 for mpi in mpis.iter() {
                     mpi.serialize(w)?;
@@ -1043,6 +1048,11 @@ impl MarshalInto for crypto::mpi::PublicKey {
             ECDH { ref curve, ref q, hash: _, sym: _ } => {
                 1 + curve.oid().len() + q.serialized_len() + 4
             }
+
+            X25519 { .. } => 32,
+            X448 { .. } => 56,
+            Ed25519 { .. } => 32,
+            Ed448 { .. } => 57,
 
             Unknown { ref mpis, ref rest } => {
                 mpis.iter().map(|mpi| mpi.serialized_len()).sum::<usize>()
@@ -1089,6 +1099,11 @@ impl Marshal for crypto::mpi::SecretKeyMaterial {
                 scalar.serialize(w)?;
             }
 
+            X25519 { x } => w.write_all(x)?,
+            X448 { x } => w.write_all(x)?,
+            Ed25519 { x } => w.write_all(x)?,
+            Ed448 { x } => w.write_all(x)?,
+
             Unknown { ref mpis, ref rest } => {
                 for mpi in mpis.iter() {
                     mpi.serialize(w)?;
@@ -1129,6 +1144,11 @@ impl MarshalInto for crypto::mpi::SecretKeyMaterial {
             ECDH{ ref scalar } => {
                 scalar.serialized_len()
             }
+
+            X25519 { .. } => 32,
+            X448 { .. } => 56,
+            Ed25519 { .. } => 32,
+            Ed448 { .. } => 57,
 
             Unknown { ref mpis, ref rest } => {
                 mpis.iter().map(|mpi| mpi.serialized_len()).sum::<usize>()
@@ -1192,6 +1212,16 @@ impl Marshal for crypto::mpi::Ciphertext {
                 write_field_with_u8_size(w, "Key", key)?;
             }
 
+            X25519 {  e, key } => {
+                w.write_all(&e[..])?;
+                write_field_with_u8_size(w, "Key", key)?;
+            }
+
+            X448 {  e, key } => {
+                w.write_all(&e[..])?;
+                write_field_with_u8_size(w, "Key", key)?;
+            }
+
             Unknown { ref mpis, ref rest } => {
                 for mpi in mpis.iter() {
                     mpi.serialize(w)?;
@@ -1218,6 +1248,14 @@ impl MarshalInto for crypto::mpi::Ciphertext {
 
             ECDH{ ref e, ref key } => {
                 e.serialized_len() + 1 + key.len()
+            }
+
+            X25519 { key, .. } => {
+                32 + 1 + key.len()
+            }
+
+            X448 { key, .. } => {
+                56 + 1 + key.len()
             }
 
             Unknown { ref mpis, ref rest } => {
@@ -1258,6 +1296,9 @@ impl Marshal for crypto::mpi::Signature {
                 s.serialize(w)?;
             }
 
+            Ed25519 { s } => w.write_all(&s[..])?,
+            Ed448 { s } => w.write_all(&s[..])?,
+
             Unknown { ref mpis, ref rest } => {
                 for mpi in mpis.iter() {
                     mpi.serialize(w)?;
@@ -1289,6 +1330,9 @@ impl MarshalInto for crypto::mpi::Signature {
             ECDSA { ref r, ref s } => {
                 r.serialized_len() + s.serialized_len()
             }
+
+            Ed25519 { .. } => 64,
+            Ed448 { .. } => 114,
 
             Unknown { ref mpis, ref rest } => {
                 mpis.iter().map(|mpi| mpi.serialized_len()).sum::<usize>()

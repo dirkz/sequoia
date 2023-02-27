@@ -55,10 +55,12 @@ impl Asymmetric for super::Backend {
         use PublicKeyAlgorithm::*;
         #[allow(deprecated)]
         match algo {
+            X25519 | Ed25519 |
             RSAEncryptSign | RSAEncrypt | RSASign | ECDH | EdDSA | ECDSA
                 => true,
             DSA
                 => true,
+            X448 | Ed448 |
             ElGamalEncrypt | ElGamalEncryptSign | Private(_) | Unknown(_)
                 => false,
         }
@@ -426,12 +428,13 @@ impl<P: key::KeyParts, R: key::KeyRole> Key<P, R> {
 
             ECDH => crate::crypto::ecdh::encrypt(self.parts_as_public(), data),
 
-            RSASign | DSA | ECDSA | EdDSA =>
+            RSASign | DSA | ECDSA | EdDSA | Ed25519 | Ed448 =>
                 Err(Error::InvalidOperation(
                     format!("{} is not an encryption algorithm", self.pk_algo())
                 ).into()),
 
             ElGamalEncrypt | ElGamalEncryptSign |
+            X25519 | X448 |
             Private(_) | Unknown(_) =>
                 Err(Error::UnsupportedPublicKeyAlgorithm(self.pk_algo()).into()),
         }

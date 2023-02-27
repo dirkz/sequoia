@@ -3545,7 +3545,25 @@ impl ArbitraryBounded for Signature4 {
                 s: MPI::arbitrary(g),
             },
 
-            _ => unreachable!(),
+            Ed25519 => mpi::Signature::Ed25519 {
+                s: {
+                    let mut s = [0; 64];
+                    s.iter_mut().for_each(|p| *p = u8::arbitrary(g));
+                    Box::new(s)
+                },
+            },
+            Ed448 => mpi::Signature::Ed448 {
+                s: {
+                    let mut s = [0; 114];
+                    s.iter_mut().for_each(|p| *p = u8::arbitrary(g));
+                    Box::new(s)
+                },
+            },
+
+            ElGamalEncryptSign |
+            RSAEncrypt | ElGamalEncrypt | ECDH |
+            X25519 | X448 |
+            Private(_) | Unknown(_) => unreachable!(),
         };
 
         Signature4 {
@@ -3567,7 +3585,7 @@ impl_arbitrary_with_bound!(Signature4);
 #[cfg(test)]
 impl ArbitraryBounded for Signature3 {
     fn arbitrary_bounded(g: &mut Gen, _depth: usize) -> Self {
-        use mpi::MPI;
+        use mpi::{arbitrarize, MPI};
         use PublicKeyAlgorithm::*;
 
         let pk_algo = PublicKeyAlgorithm::arbitrary_for_signing(g);
@@ -3591,6 +3609,14 @@ impl ArbitraryBounded for Signature3 {
             ECDSA => mpi::Signature::ECDSA  {
                 r: MPI::arbitrary(g),
                 s: MPI::arbitrary(g),
+            },
+
+            Ed25519 => mpi::Signature::Ed25519  {
+                s: Box::new(arbitrarize(g, [0; 64])),
+            },
+
+            Ed448 => mpi::Signature::Ed448  {
+                s: Box::new(arbitrarize(g, [0; 114])),
             },
 
             _ => unreachable!(),

@@ -10,7 +10,10 @@ use crate::{
     HashAlgorithm,
 };
 use crate::types::Curve;
-use crate::crypto::mpi::{self, MPI, ProtectedMPI};
+use crate::crypto::{
+    mem::Protected,
+    mpi::{self, MPI, ProtectedMPI},
+};
 use crate::parse::{
     PacketHeaderParser,
     Cookie,
@@ -129,6 +132,30 @@ impl mpi::PublicKey {
                     sym
                 })
             }
+
+            X25519 => {
+                let mut u = [0; 32];
+                php.parse_bytes_into("x25519_public", &mut u)?;
+                Ok(mpi::PublicKey::X25519 { u })
+            },
+
+            X448 => {
+                let mut u = [0; 56];
+                php.parse_bytes_into("x448_public", &mut u)?;
+                Ok(mpi::PublicKey::X448 { u: Box::new(u) })
+            },
+
+            Ed25519 => {
+                let mut a = [0; 32];
+                php.parse_bytes_into("ed25519_public", &mut a)?;
+                Ok(mpi::PublicKey::Ed25519 { a })
+            },
+
+            Ed448 => {
+                let mut a = [0; 57];
+                php.parse_bytes_into("ed448_public", &mut a)?;
+                Ok(mpi::PublicKey::Ed448 { a: Box::new(a) })
+            },
 
             Unknown(_) | Private(_) => {
                 let mut mpis = Vec::new();
@@ -274,6 +301,30 @@ impl mpi::SecretKeyMaterial {
                 })
             }
 
+            X25519 => {
+                let mut x: Protected = vec![0; 32].into();
+                php.parse_bytes_into("x25519_secret", &mut x)?;
+                Ok(mpi::SecretKeyMaterial::X25519 { x })
+            },
+
+            X448 => {
+                let mut x: Protected = vec![0; 56].into();
+                php.parse_bytes_into("x448_secret", &mut x)?;
+                Ok(mpi::SecretKeyMaterial::X448 { x })
+            },
+
+            Ed25519 => {
+                let mut x: Protected = vec![0; 32].into();
+                php.parse_bytes_into("ed25519_secret", &mut x)?;
+                Ok(mpi::SecretKeyMaterial::Ed25519 { x })
+            },
+
+            Ed448 => {
+                let mut x: Protected = vec![0; 57].into();
+                php.parse_bytes_into("ed448_secret", &mut x)?;
+                Ok(mpi::SecretKeyMaterial::Ed448 { x })
+            },
+
             Unknown(_) | Private(_) => {
                 let mut mpis = Vec::new();
                 while let Ok(mpi) = ProtectedMPI::parse("unknown_len",
@@ -409,6 +460,24 @@ impl mpi::Ciphertext {
                 })
             }
 
+            X25519 => {
+                let mut e = [0; 32];
+                php.parse_bytes_into("x25519_e", &mut e)?;
+                let key_len = php.parse_u8("x25519_esk_len")? as usize;
+                let key = Vec::from(&php.parse_bytes("x25519_esk", key_len)?
+                                    [..key_len]);
+                Ok(mpi::Ciphertext::X25519 { e: Box::new(e), key: key.into() })
+            },
+
+            X448 => {
+                let mut e = [0; 56];
+                php.parse_bytes_into("x448_e", &mut e)?;
+                let key_len = php.parse_u8("x448_esk_len")? as usize;
+                let key = Vec::from(&php.parse_bytes("x448_esk", key_len)?
+                                    [..key_len]);
+                Ok(mpi::Ciphertext::X448 { e: Box::new(e), key: key.into() })
+            },
+
             Unknown(_) | Private(_) => {
                 let mut mpis = Vec::new();
                 while let Ok(mpi) = MPI::parse("unknown_len",
@@ -423,8 +492,9 @@ impl mpi::Ciphertext {
                 })
             }
 
-            RSASign | DSA | EdDSA | ECDSA => Err(Error::InvalidArgument(
-                format!("not an encryption algorithm: {:?}", algo)).into()),
+            RSASign | DSA | EdDSA | ECDSA | Ed25519 | Ed448
+                => Err(Error::InvalidArgument(
+                    format!("not an encryption algorithm: {:?}", algo)).into()),
         }
     }
 }
@@ -514,6 +584,18 @@ impl mpi::Signature {
                 })
             }
 
+            Ed25519 => {
+                let mut s = [0; 64];
+                php.parse_bytes_into("ed25519_sig", &mut s)?;
+                Ok(mpi::Signature::Ed25519 { s: Box::new(s) })
+            },
+
+            Ed448 => {
+                let mut s = [0; 114];
+                php.parse_bytes_into("ed448_sig", &mut s)?;
+                Ok(mpi::Signature::Ed448 { s: Box::new(s) })
+            },
+
             Unknown(_) | Private(_) => {
                 let mut mpis = Vec::new();
                 while let Ok(mpi) = MPI::parse("unknown_len",
@@ -528,8 +610,9 @@ impl mpi::Signature {
                 })
             }
 
-            RSAEncrypt | ElGamalEncrypt | ECDH => Err(Error::InvalidArgument(
-                format!("not a signature algorithm: {:?}", algo)).into()),
+            RSAEncrypt | ElGamalEncrypt | ECDH | X25519 | X448
+                => Err(Error::InvalidArgument(
+                    format!("not a signature algorithm: {:?}", algo)).into()),
         }
     }
 }

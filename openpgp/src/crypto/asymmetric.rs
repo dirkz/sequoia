@@ -3,7 +3,12 @@
 use crate::packet::{self, key, Key};
 use crate::crypto::SessionKey;
 use crate::crypto::mpi;
-use crate::types::{Curve, HashAlgorithm, PublicKeyAlgorithm};
+use crate::types::{
+    Curve,
+    HashAlgorithm,
+    PublicKeyAlgorithm,
+    SymmetricAlgorithm,
+};
 
 use crate::{Error, Result};
 
@@ -222,6 +227,22 @@ impl Signer for KeyPair {
 
         self.secret().map(|secret| {
             match (self.public().pk_algo(), self.public().mpis(), secret) {
+                (PublicKeyAlgorithm::Ed25519,
+                 mpi::PublicKey::Ed25519 { a },
+                 mpi::SecretKeyMaterial::Ed25519 { x }) => {
+                    Ok(mpi::Signature::Ed25519 {
+                        s: Box::new(Backend::ed25519_sign(x, a, digest)?),
+                    })
+                },
+
+                (PublicKeyAlgorithm::Ed448,
+                 mpi::PublicKey::Ed448 { a },
+                 mpi::SecretKeyMaterial::Ed448 { x }) => {
+                    Ok(mpi::Signature::Ed448 {
+                        s: Box::new(Backend::ed448_sign(x, a, digest)?),
+                    })
+                },
+
                 (PublicKeyAlgorithm::EdDSA,
                  mpi::PublicKey::EdDSA { curve, q },
                  mpi::SecretKeyMaterial::EdDSA { scalar }) => match curve {
@@ -257,12 +278,54 @@ impl Decryptor for KeyPair {
                plaintext_len: Option<usize>)
                -> Result<SessionKey>
     {
-        use crate::crypto::backend::{Backend, interface::Asymmetric};
+        use crate::crypto::ecdh::aes_key_unwrap;
+        use crate::crypto::backend::{Backend, interface::{Asymmetric, Kdf}};
 
         self.secret().map(|secret| {
             #[allow(non_snake_case)]
             #[allow(clippy::match_single_binding)]
+            #[allow(clippy::erasing_op, clippy::identity_op)]
             match (self.public().mpis(), secret, ciphertext) {
+                (mpi::PublicKey::X25519 { u: U },
+                 mpi::SecretKeyMaterial::X25519 { x },
+                 mpi::Ciphertext::X25519 { e: E, key }) => {
+                    // Compute the shared point S = xE;
+                    let S = Backend::x25519_shared_point(x, E)?;
+
+                    // Compute the wrap key.
+                    let wrap_algo = SymmetricAlgorithm::AES128;
+                    let mut ikm: SessionKey = vec![0; 32 + 32 + 32].into();
+                    ikm[0 * 32..1 * 32].copy_from_slice(&E[..]);
+                    ikm[1 * 32..2 * 32].copy_from_slice(&U[..]);
+                    ikm[2 * 32..3 * 32].copy_from_slice(&S[..]);
+                    let mut kek = vec![0; wrap_algo.key_size()?].into();
+                    Backend::hkdf_sha256(&ikm, None, b"OpenPGP X25519",
+                                         &mut kek)?;
+
+                    Ok(aes_key_unwrap(wrap_algo, kek.as_protected(),
+                                      key)?.into())
+                },
+
+                (mpi::PublicKey::X448 { u: U },
+                 mpi::SecretKeyMaterial::X448 { x },
+                 mpi::Ciphertext::X448 { e: E, key }) => {
+                    // Compute the shared point S = xE;
+                    let S = Backend::x448_shared_point(x, E)?;
+
+                    // Compute the wrap key.
+                    let wrap_algo = SymmetricAlgorithm::AES256;
+                    let mut ikm: SessionKey = vec![0; 56 + 56 + 56].into();
+                    ikm[0 * 56..1 * 56].copy_from_slice(&E[..]);
+                    ikm[1 * 56..2 * 56].copy_from_slice(&U[..]);
+                    ikm[2 * 56..3 * 56].copy_from_slice(&S[..]);
+                    let mut kek = vec![0; wrap_algo.key_size()?].into();
+                    Backend::hkdf_sha256(&ikm, None, b"OpenPGP X448",
+                                         &mut kek)?;
+
+                    Ok(aes_key_unwrap(wrap_algo, kek.as_protected(),
+                                      key)?.into())
+                },
+
                 (mpi::PublicKey::ECDH { curve: Curve::Cv25519, .. },
                  mpi::SecretKeyMaterial::ECDH { scalar, },
                  mpi::Ciphertext::ECDH { e, .. }) =>

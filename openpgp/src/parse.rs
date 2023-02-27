@@ -640,6 +640,13 @@ impl<'a> PacketHeaderParser<'a> {
         Ok(r)
     }
 
+    fn parse_bytes_into(&mut self, name: &'static str, buf: &mut [u8])
+                   -> Result<()> {
+        self.reader.read_exact(buf)?;
+        self.field(name, buf.len());
+        Ok(())
+    }
+
     fn parse_bytes_eof(&mut self, name: &'static str) -> Result<Vec<u8>> {
         let r = self.reader.steal_eof()?;
         self.field(name, r.len());
