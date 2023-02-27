@@ -67,11 +67,17 @@ impl PKESK3 {
         where P: key::KeyParts,
               R: key::KeyRole,
     {
+        // XXX: Corner case: for X25519 and X448 we have to prepend
+        // the cipher octet to the ciphertext instead of encrypting
+        // it.
+
         // We need to prefix the cipher specifier to the session key,
         // and a two-octet checksum.
         let mut psk = Vec::with_capacity(1 + session_key.len() + 2);
         psk.push(algo.into());
         psk.extend_from_slice(session_key);
+
+        // XXX: Move the checksumming somewhere else.
 
         // Compute the sum modulo 65536, i.e. as u16.
         let checksum = session_key
@@ -149,12 +155,17 @@ impl PKESK3 {
                         sym_algo_hint: Option<SymmetricAlgorithm>)
         -> Result<(SymmetricAlgorithm, SessionKey)>
     {
+        // XXX: Corner case: for X25519 and X448 we have to prepend
+        // the cipher octet to the ciphertext instead of encrypting
+        // it.
+
         let plaintext_len = if let Some(s) = sym_algo_hint {
             Some(1 /* cipher octet */ + s.key_size()? + 2 /* chksum */)
         } else {
             None
         };
         let plain = decryptor.decrypt(&self.esk, plaintext_len)?;
+        // XXX: Move the checksumming somewhere else.
         let key_rgn = 1..plain.len().saturating_sub(2);
         let sym_algo: SymmetricAlgorithm = plain[0].into();
         let mut key: SessionKey = vec![0u8; sym_algo.key_size()?].into();

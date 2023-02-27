@@ -748,13 +748,72 @@ impl<P, R> Key<P, R>
 {
     /// Encrypts the given data with this key.
     pub fn encrypt(&self, data: &SessionKey) -> Result<mpi::Ciphertext> {
-        use crate::crypto::backend::{Backend, interface::Asymmetric};
+        use crate::crypto::ecdh::aes_key_wrap;
+        use crate::crypto::backend::{Backend, interface::{Asymmetric, Kdf}};
         use crate::crypto::mpi::PublicKey;
         use PublicKeyAlgorithm::*;
 
         #[allow(deprecated, non_snake_case)]
+        #[allow(clippy::erasing_op, clippy::identity_op)]
         match self.pk_algo() {
-            RSASign | DSA | ECDSA | EdDSA =>
+            X25519 =>
+                if let mpi::PublicKey::X25519 { u: U } = self.mpis()
+            {
+                // Generate an ephemeral key pair {v, V=vG}
+                let (v, V) = Backend::x25519_generate_key()?;
+
+                // Compute the shared point S = vU;
+                let S = Backend::x25519_shared_point(&v, U)?;
+
+                // Compute the wrap key.
+                let wrap_algo = SymmetricAlgorithm::AES128;
+                let mut ikm: SessionKey = vec![0; 32 + 32 + 32].into();
+                ikm[0 * 32..1 * 32].copy_from_slice(&V[..]);
+                ikm[1 * 32..2 * 32].copy_from_slice(&U[..]);
+                ikm[2 * 32..3 * 32].copy_from_slice(&S[..]);
+                let mut kek = vec![0; wrap_algo.key_size()?].into();
+                Backend::hkdf_sha256(&ikm, None, b"OpenPGP X25519", &mut kek)?;
+
+                let esk = aes_key_wrap(wrap_algo, kek.as_protected(),
+                                       data.as_protected())?;
+                Ok(mpi::Ciphertext::X25519 {
+                    e: Box::new(V),
+                    key: esk.into(),
+                })
+            } else {
+                Err(Error::MalformedPacket(format!(
+                    "Key: Expected X25519 public key, got {:?}", self.mpis())).into())
+            },
+
+            X448 =>
+                if let mpi::PublicKey::X448 { u: U } = self.mpis()
+            {
+                let (v, V) = Backend::x448_generate_key()?;
+
+                // Compute the shared point S = vU;
+                let S = Backend::x448_shared_point(&v, U)?;
+
+                // Compute the wrap key.
+                let wrap_algo = SymmetricAlgorithm::AES256;
+                let mut ikm: SessionKey = vec![0; 56 + 56 + 56].into();
+                ikm[0 * 56..1 * 56].copy_from_slice(&V[..]);
+                ikm[1 * 56..2 * 56].copy_from_slice(&U[..]);
+                ikm[2 * 56..3 * 56].copy_from_slice(&S[..]);
+                let mut kek = vec![0; wrap_algo.key_size()?].into();
+                Backend::hkdf_sha256(&ikm, None, b"OpenPGP X448", &mut kek)?;
+
+                let esk = aes_key_wrap(wrap_algo, kek.as_protected(),
+                                       data.as_protected())?;
+                Ok(mpi::Ciphertext::X448 {
+                    e: Box::new(V),
+                    key: esk.into(),
+                })
+            } else {
+                Err(Error::MalformedPacket(format!(
+                    "Key: Expected X448 public key, got {:?}", self.mpis())).into())
+            },
+
+            RSASign | DSA | ECDSA | EdDSA | Ed25519 | Ed448 =>
                 Err(Error::InvalidOperation(
                     format!("{} is not an encryption algorithm", self.pk_algo())
                 ).into()),
@@ -800,6 +859,12 @@ impl<P, R> Key<P, R>
         }
 
         let ok = match (self.mpis(), sig) {
+            (PublicKey::Ed25519 { a }, Signature::Ed25519 { s }) =>
+                Backend::ed25519_verify(a, digest, s)?,
+
+            (PublicKey::Ed448 { a }, Signature::Ed448 { s }) =>
+                Backend::ed448_verify(a, digest, s)?,
+
             (PublicKey::EdDSA { curve, q }, Signature::EdDSA { r, s }) =>
               match curve {
                 Curve::Ed25519 => {
@@ -1372,6 +1437,74 @@ impl<R> Key4<SecretParts, R>
             PublicKeyAlgorithm::ElGamalEncrypt,
             public_mpis,
             private_mpis.into())
+    }
+
+    /// Generates a new X25519 key.
+    pub fn generate_x25519() -> Result<Self> {
+        use crate::crypto::backend::{Backend, interface::Asymmetric};
+
+        let (private, public) = Backend::x25519_generate_key()?;
+
+        Self::with_secret(
+            crate::now(),
+            PublicKeyAlgorithm::X25519,
+            mpi::PublicKey::X25519 {
+                u: public,
+            },
+            mpi::SecretKeyMaterial::X25519 {
+                x: private,
+            }.into())
+    }
+
+    /// Generates a new X448 key.
+    pub fn generate_x448() -> Result<Self> {
+        use crate::crypto::backend::{Backend, interface::Asymmetric};
+
+        let (private, public) = Backend::x448_generate_key()?;
+
+        Self::with_secret(
+            crate::now(),
+            PublicKeyAlgorithm::X448,
+            mpi::PublicKey::X448 {
+                u: Box::new(public),
+            },
+            mpi::SecretKeyMaterial::X448 {
+                x: private,
+            }.into())
+    }
+
+    /// Generates a new Ed25519 key.
+    pub fn generate_ed25519() -> Result<Self> {
+        use crate::crypto::backend::{Backend, interface::Asymmetric};
+
+        let (private, public) = Backend::ed25519_generate_key()?;
+
+        Self::with_secret(
+            crate::now(),
+            PublicKeyAlgorithm::Ed25519,
+            mpi::PublicKey::Ed25519 {
+                a: public,
+            },
+            mpi::SecretKeyMaterial::Ed25519 {
+                x: private,
+            }.into())
+    }
+
+    /// Generates a new Ed448 key.
+    pub fn generate_ed448() -> Result<Self> {
+        use crate::crypto::backend::{Backend, interface::Asymmetric};
+
+        let (private, public) = Backend::ed448_generate_key()?;
+
+        Self::with_secret(
+            crate::now(),
+            PublicKeyAlgorithm::Ed448,
+            mpi::PublicKey::Ed448 {
+                a: Box::new(public),
+            },
+            mpi::SecretKeyMaterial::Ed448 {
+                x: private,
+            }.into())
     }
 }
 

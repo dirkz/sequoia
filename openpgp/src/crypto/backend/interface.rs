@@ -75,6 +75,24 @@ pub trait Asymmetric {
     fn x25519_shared_point(secret: &Protected, public: &[u8; 32])
                            -> Result<Protected>;
 
+    /// Generates an X448 key pair.
+    ///
+    /// Returns a tuple containing the secret and public key.
+    fn x448_generate_key() -> Result<(Protected, [u8; 56])> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::X448).into())
+    }
+
+    /// Computes the public key for a given secret key.
+    fn x448_derive_public(_secret: &Protected) -> Result<[u8; 56]> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::X448).into())
+    }
+
+    /// Computes the shared point.
+    fn x448_shared_point(_secret: &Protected, _public: &[u8; 56])
+                           -> Result<Protected> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::X448).into())
+    }
+
     /// Generates an Ed25519 key pair.
     ///
     /// Returns a tuple containing the secret and public key.
@@ -90,6 +108,30 @@ pub trait Asymmetric {
     /// Verifies an Ed25519 signature.
     fn ed25519_verify(public: &[u8; 32], digest: &[u8], signature: &[u8; 64])
                       -> Result<bool>;
+
+    /// Generates an Ed448 key pair.
+    ///
+    /// Returns a tuple containing the secret and public key.
+    fn ed448_generate_key() -> Result<(Protected, [u8; 57])> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::Ed448).into())
+    }
+
+    /// Computes the public key for a given secret key.
+    fn ed448_derive_public(_secret: &Protected) -> Result<[u8; 57]> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::Ed448).into())
+    }
+
+    /// Creates an Ed448 signature.
+    fn ed448_sign(_secret: &Protected, _public: &[u8; 57], _digest: &[u8])
+                    -> Result<[u8; 114]> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::Ed448).into())
+    }
+
+    /// Verifies an Ed448 signature.
+    fn ed448_verify(_public: &[u8; 57], _digest: &[u8], _signature: &[u8; 114])
+                      -> Result<bool> {
+        Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::Ed448).into())
+    }
 
     /// Generates a DSA key pair.
     ///

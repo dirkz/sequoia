@@ -120,6 +120,14 @@ pub enum PublicKeyAlgorithm {
     ElGamalEncryptSign,
     /// "Twisted" Edwards curve DSA
     EdDSA,
+    /// X25519 (RFC 7748).
+    X25519,
+    /// X448 (RFC 7748).
+    X448,
+    /// Ed25519 (RFC 8032).
+    Ed25519,
+    /// Ed448 (RFC 8032).
+    Ed448,
     /// Private algorithm identifier.
     Private(u8),
     /// Unknown algorithm identifier.
@@ -128,7 +136,7 @@ pub enum PublicKeyAlgorithm {
 assert_send_and_sync!(PublicKeyAlgorithm);
 
 #[allow(deprecated)]
-pub(crate) const PUBLIC_KEY_ALGORITHM_VARIANTS: [PublicKeyAlgorithm; 9] = [
+pub(crate) const PUBLIC_KEY_ALGORITHM_VARIANTS: [PublicKeyAlgorithm; 13] = [
     PublicKeyAlgorithm::RSAEncryptSign,
     PublicKeyAlgorithm::RSAEncrypt,
     PublicKeyAlgorithm::RSASign,
@@ -138,6 +146,10 @@ pub(crate) const PUBLIC_KEY_ALGORITHM_VARIANTS: [PublicKeyAlgorithm; 9] = [
     PublicKeyAlgorithm::ECDSA,
     PublicKeyAlgorithm::ElGamalEncryptSign,
     PublicKeyAlgorithm::EdDSA,
+    PublicKeyAlgorithm::X25519,
+    PublicKeyAlgorithm::X448,
+    PublicKeyAlgorithm::Ed25519,
+    PublicKeyAlgorithm::Ed448,
 ];
 
 impl PublicKeyAlgorithm {
@@ -162,6 +174,8 @@ impl PublicKeyAlgorithm {
                      | ECDSA
                      | ElGamalEncryptSign
                      | EdDSA
+                     | Ed25519
+                     | Ed448
                      | Private(_)
                      | Unknown(_)
             )
@@ -188,6 +202,8 @@ impl PublicKeyAlgorithm {
                      | ElGamalEncrypt
                      | ECDH
                      | ElGamalEncryptSign
+                     | X25519
+                     | X448
                      | Private(_)
                      | Unknown(_)
             )
@@ -235,6 +251,10 @@ impl From<u8> for PublicKeyAlgorithm {
             19 => ECDSA,
             20 => ElGamalEncryptSign,
             22 => EdDSA,
+            25 => X25519,
+            26 => X448,
+            27 => Ed25519,
+            28 => Ed448,
             100..=110 => Private(u),
             u => Unknown(u),
         }
@@ -255,6 +275,10 @@ impl From<PublicKeyAlgorithm> for u8 {
             ECDSA => 19,
             ElGamalEncryptSign => 20,
             EdDSA => 22,
+            X25519 => 25,
+            X448 => 26,
+            Ed25519 => 27,
+            Ed448 => 28,
             Private(u) => u,
             Unknown(u) => u,
         }
@@ -294,6 +318,10 @@ impl fmt::Display for PublicKeyAlgorithm {
                 ElGamalEncryptSign => f.write_str("ElGamal (Encrypt or Sign)"),
                 ECDH => f.write_str("ECDH public key algorithm"),
                 EdDSA => f.write_str("EdDSA Edwards-curve Digital Signature Algorithm"),
+                X25519 => f.write_str("X25519"),
+                X448 => f.write_str("X448"),
+                Ed25519 => f.write_str("Ed25519"),
+                Ed448 => f.write_str("Ed448"),
                 Private(u) =>
                     f.write_fmt(format_args!("Private/Experimental public key algorithm {}", u)),
                 Unknown(u) =>
@@ -310,6 +338,10 @@ impl fmt::Display for PublicKeyAlgorithm {
                 ElGamalEncryptSign => f.write_str("ElGamal"),
                 ECDH => f.write_str("ECDH"),
                 EdDSA => f.write_str("EdDSA"),
+                X25519 => f.write_str("X25519"),
+                X448 => f.write_str("X448"),
+                Ed25519 => f.write_str("Ed25519"),
+                Ed448 => f.write_str("Ed448"),
                 Private(u) =>
                     f.write_fmt(format_args!("Private algo {}", u)),
                 Unknown(u) =>
@@ -332,7 +364,10 @@ impl PublicKeyAlgorithm {
         use self::PublicKeyAlgorithm::*;
 
         #[allow(deprecated)]
-        let a = g.choose(&[RSAEncryptSign, RSASign, DSA, ECDSA, EdDSA]).unwrap();
+        let a = g.choose(&[
+            RSAEncryptSign, RSASign, DSA, ECDSA, EdDSA,
+            Ed25519, Ed448,
+        ]).unwrap();
         assert!(a.for_signing());
         *a
     }

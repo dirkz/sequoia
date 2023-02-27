@@ -12,7 +12,10 @@ use crate::packet::{key, Key};
 use crate::crypto::asymmetric::KeyPair;
 use crate::crypto::backend::interface::Asymmetric;
 use crate::crypto::mpi::{self, MPI, ProtectedMPI, PublicKey};
-use crate::crypto::SessionKey;
+use crate::crypto::{
+    SessionKey,
+    mem::Protected,
+};
 use crate::types::{Curve, HashAlgorithm};
 
 impl Asymmetric for super::Backend {
@@ -20,8 +23,10 @@ impl Asymmetric for super::Backend {
         use PublicKeyAlgorithm::*;
         #[allow(deprecated)]
         match algo {
+            X25519 | Ed25519 |
             RSAEncryptSign | RSAEncrypt | RSASign | DSA | ECDH | ECDSA | EdDSA
                 => true,
+            X448 | Ed448 |
             ElGamalEncrypt | ElGamalEncryptSign | Private(_) | Unknown(_)
                 => false,
         }
@@ -287,11 +292,13 @@ impl<P: key::KeyParts, R: key::KeyRole> Key<P, R> {
             ECDH => crate::crypto::ecdh::encrypt(self.parts_as_public(),
                                                  data),
 
-            RSASign | DSA | ECDSA | EdDSA =>
+            RSASign | DSA | ECDSA | EdDSA | Ed25519 | Ed448 =>
                 Err(Error::InvalidOperation(
                     format!("{} is not an encryption algorithm", self.pk_algo())
                 ).into()),
 
+            X25519 | // Handled in common code.
+            X448 | // Handled in common code.
             ElGamalEncrypt | ElGamalEncryptSign |
             Private(_) | Unknown(_) =>
                 Err(Error::UnsupportedPublicKeyAlgorithm(self.pk_algo()).into()),
@@ -352,7 +359,6 @@ impl<P: key::KeyParts, R: key::KeyRole> Key<P, R> {
 }
 
 use std::time::SystemTime;
-use crate::crypto::mem::Protected;
 use crate::packet::key::{Key4, SecretParts};
 use crate::types::PublicKeyAlgorithm;
 
