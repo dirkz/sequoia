@@ -2056,6 +2056,7 @@ impl Marshal for OnePassSig {
     fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
         match self {
             OnePassSig::V3(ref s) => s.serialize(o),
+            OnePassSig::V6(ref s) => s.serialize(o),
         }
     }
 }
@@ -2064,12 +2065,23 @@ impl MarshalInto for OnePassSig {
     fn serialized_len(&self) -> usize {
         match self {
             OnePassSig::V3(ref s) => s.serialized_len(),
+            OnePassSig::V6(ref s) => s.serialized_len(),
         }
     }
 
     fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
         match self {
             OnePassSig::V3(ref s) => s.serialize_into(buf),
+            OnePassSig::V6(ref s) => s.serialize_into(buf),
+        }
+    }
+}
+
+impl NetLength for OnePassSig {
+    fn net_len(&self) -> usize {
+        match self {
+            OnePassSig::V3(ref s) => s.net_len(),
+            OnePassSig::V6(ref s) => s.net_len(),
         }
     }
 }
@@ -2100,6 +2112,51 @@ impl NetLength for OnePassSig3 {
 }
 
 impl MarshalInto for OnePassSig3 {
+    fn serialized_len(&self) -> usize {
+        self.net_len()
+    }
+
+    fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        generic_serialize_into(self, MarshalInto::serialized_len(self), buf)
+    }
+}
+
+impl seal::Sealed for OnePassSig6 {}
+impl Marshal for OnePassSig6 {
+    fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        write_byte(o, 6)?; // Version.
+        write_byte(o, self.typ().into())?;
+        write_byte(o, self.hash_algo().into())?;
+        write_byte(o, self.pk_algo().into())?;
+        write_byte(o, self.salt().len().try_into().map_err(
+            |_| Error::InvalidArgument("Salt too large".into()))?)?;
+        o.write_all(self.salt())?;
+        if let Fingerprint::V6(bytes) = self.issuer() {
+            o.write_all(bytes)?;
+        } else {
+            return Err(Error::InvalidArgument(
+                "Need a v6 fingerprint as issuer".into()).into());
+        }
+        write_byte(o, self.last_raw())?;
+
+        Ok(())
+    }
+}
+
+impl NetLength for OnePassSig6 {
+    fn net_len(&self) -> usize {
+        1 // Version.
+            + 1 // Signature type.
+            + 1 // Hash algorithm
+            + 1 // PK algorithm.
+            + 1 // The salt length.
+            + self.salt().len() // The salt.
+            + 32 // Issuer fingerprint.
+            + 1 // Last.
+    }
+}
+
+impl MarshalInto for OnePassSig6 {
     fn serialized_len(&self) -> usize {
         self.net_len()
     }

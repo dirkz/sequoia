@@ -181,7 +181,9 @@ impl Header {
                             // 10 bytes of fixed header, plus the
                             // encrypted session key.
                             10 < l && l < 10 * 1024,
-                        Tag::OnePassSig if ! future_compatible => l == 13,
+                        Tag::OnePassSig if ! future_compatible =>
+                            l == 13 // v3
+                            || (6 + 32..6 + 32 + 256).contains(&l), // v6
                         Tag::OnePassSig => l < 1024,
                         Tag::PublicKey | Tag::PublicSubkey
                             | Tag::SecretKey | Tag::SecretSubkey =>

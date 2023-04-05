@@ -48,6 +48,7 @@ pub use crate::packet::{
     key::Key6,
     key::SecretKeyMaterial,
     one_pass_sig::OnePassSig3,
+    one_pass_sig::OnePassSig6,
     pkesk::PKESK3,
     seip::SEIP1,
     signature,

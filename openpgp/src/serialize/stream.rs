@@ -1244,7 +1244,7 @@ impl<'a> Signer<'a> {
         assert!(!self.signers.is_empty(), "The constructor adds a signer.");
         assert!(self.inner.is_some(), "The constructor adds an inner writer.");
 
-        for (keypair, signer_hash, _signer_salt) in self.signers.iter_mut() {
+        for (keypair, signer_hash, signer_salt) in self.signers.iter_mut() {
             // First, compute a suitable hash algorithm, starting with
             // the one configured using Self::hash_algo.
             let mut acceptable_hashes =
@@ -1272,7 +1272,7 @@ impl<'a> Signer<'a> {
             }
             let algo = acceptable_hashes[0];
             *signer_hash = algo;
-            let hash = algo.context()?;
+            let mut hash = algo.context()?;
 
             match keypair.public().version() {
                 4 => {
@@ -1280,10 +1280,31 @@ impl<'a> Signer<'a> {
                         if self.template.typ() == SignatureType::Text
                             || self.mode == SignatureMode::Cleartext
                         {
-                            HashingMode::Text(hash)
+                            HashingMode::Text(vec![], hash)
                         } else {
-                            HashingMode::Binary(hash)
+                            HashingMode::Binary(vec![], hash)
                         });
+                },
+                6 => {
+                    // Version 6 signatures are salted, and we
+                    // need to include it in the OPS packet.
+                    // Generate and remember the salt here.
+                    let mut salt = vec![0; algo.salt_size()?];
+                    crate::crypto::random(&mut salt);
+
+                    // Add the salted context.
+                    hash.update(&salt);
+                    self.hashes.push(
+                        if self.template.typ() == SignatureType::Text
+                            || self.mode == SignatureMode::Cleartext
+                        {
+                            HashingMode::Text(salt.clone(), hash)
+                        } else {
+                            HashingMode::Binary(salt.clone(), hash)
+                        });
+
+                    // And remember which signer used which salt.
+                    *signer_salt = salt;
                 },
                 v => return Err(Error::InvalidOperation(
                     format!("Unsupported Key version {}", v)).into()),
@@ -1295,7 +1316,7 @@ impl<'a> Signer<'a> {
                 // For every key we collected, build and emit a one pass
                 // signature packet.
                 let signers_count = self.signers.len();
-                for (i, (keypair, hash_algo, _salt)) in
+                for (i, (keypair, hash_algo, salt)) in
                     self.signers.iter().enumerate()
                 {
                     let last = i == signers_count - 1;
@@ -1307,6 +1328,18 @@ impl<'a> Signer<'a> {
                             ops.set_pk_algo(key.pk_algo());
                             ops.set_hash_algo(*hash_algo);
                             ops.set_issuer(key.keyid());
+                            ops.set_last(last);
+                            Packet::from(ops)
+                                .serialize(self.inner.as_mut().unwrap())?;
+                        },
+                        6 => {
+                            // Version 6 signatures are salted, and we
+                            // need to include it in the OPS packet.
+                            let mut ops = OnePassSig6::new(
+                                self.template.typ(), key.fingerprint());
+                            ops.set_pk_algo(key.pk_algo());
+                            ops.set_hash_algo(*hash_algo);
+                            ops.set_salt(salt.clone());
                             ops.set_last(last);
                             Packet::from(ops)
                                 .serialize(self.inner.as_mut().unwrap())?;
@@ -1380,14 +1413,15 @@ impl<'a> Signer<'a> {
             // Emit the signatures in reverse, so that the
             // one-pass-signature and signature packets "bracket" the
             // message.
-            for (signer, algo, _signer_salt) in self.signers.iter_mut().rev() {
+            for (signer, algo, signer_salt) in self.signers.iter_mut().rev() {
                 let (mut sig, hash) = match signer.public().version() {
                     4 => {
                         // V4 signature.
 
                         let hash = self.hashes.iter()
                             .find_map(|hash| {
-                                if hash.as_ref().algo() == *algo
+                                if hash.salt().is_empty()
+                                    && hash.as_ref().algo() == *algo
                                 {
                                     Some(hash.clone())
                                 } else {
@@ -1398,6 +1432,22 @@ impl<'a> Signer<'a> {
 
                         // Make and hash a signature packet.
                         let sig = self.template.clone();
+
+                        (sig, hash)
+                    },
+                    6 => {
+                        // V6 signature.
+                        let hash = self.hashes.iter()
+                            .find_map(|hash| if signer_salt == hash.salt() {
+                                Some(hash.clone())
+                            } else {
+                                None
+                            })
+                            .expect("we put it in there");
+
+                        // Make and hash a signature packet.
+                        let sig = self.template.clone()
+                            .set_prefix_salt(signer_salt.clone()).0;
 
                         (sig, hash)
                     },
