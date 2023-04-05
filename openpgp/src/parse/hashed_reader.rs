@@ -7,6 +7,8 @@ use buffered_reader::BufferedReader;
 use buffered_reader::buffered_reader_generic_read_impl;
 
 use crate::crypto::hash::Digest;
+use crate::fmt::hex;
+use crate::packet::Signature;
 use crate::parse::{Cookie, HashesFor, Hashing};
 use crate::Result;
 use crate::types::HashAlgorithm;
@@ -23,25 +25,34 @@ pub(crate) enum HashingMode<T> {
     /// Hash for a binary signature.
     ///
     /// The data is hashed as-is.
-    Binary(T),
+    Binary(Vec<u8>, T),
 
     /// Hash for a text signature.
     ///
     /// The data is hashed with line endings normalized to `\r\n`.
-    Text(T),
+    Text(Vec<u8>, T),
 
     /// Like Text, but the last character that we hashed was a '\r'
     /// that we converted to a '\r\n'.
-    TextLastWasCr(T),
+    TextLastWasCr(Vec<u8>, T),
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for HashingMode<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use self::HashingMode::*;
         match self {
-            Binary(t) => write!(f, "Binary({:?})", t),
-            Text(t) => write!(f, "Text({:?})", t),
-            TextLastWasCr(t) => write!(f, "Text(last was CR, {:?})", t),
+            Binary(salt, t) if salt.is_empty() =>
+                write!(f, "Binary({:?})", t),
+            Binary(salt, t) =>
+                write!(f, "Binary({}, {:?})", hex::encode(salt), t),
+            Text(salt, t) if salt.is_empty() =>
+                write!(f, "Text({:?})", t),
+            Text(salt, t) =>
+                write!(f, "Text({}, {:?})", hex::encode(salt), t),
+            TextLastWasCr(salt, t) if salt.is_empty() =>
+                write!(f, "Text(last was CR, {:?})", t),
+            TextLastWasCr(salt, t) =>
+                write!(f, "Text(last was CR, {}, {:?})", hex::encode(salt), t),
         }
     }
 }
@@ -50,12 +61,17 @@ impl<T: PartialEq> PartialEq for HashingMode<T> {
     fn eq(&self, other: &Self) -> bool {
         use self::HashingMode::*;
         match (self, other) {
-            (Binary(s), Binary(o)) => s.eq(o),
+            (Binary(salt_s, s), Binary(salt_o, o)) =>
+                salt_s == salt_o && s == o,
 
-            (Text(s), Text(o)) => s.eq(o),
-            (TextLastWasCr(s), Text(o)) => s.eq(o),
-            (Text(s), TextLastWasCr(o)) => s.eq(o),
-            (TextLastWasCr(s), TextLastWasCr(o)) => s.eq(o),
+            (Text(salt_s, s), Text(salt_o, o)) =>
+                salt_s == salt_o && s == o,
+            (TextLastWasCr(salt_s, s), Text(salt_o, o)) =>
+                salt_s == salt_o && s == o,
+            (Text(salt_s, s), TextLastWasCr(salt_o, o)) =>
+                salt_s == salt_o && s == o,
+            (TextLastWasCr(salt_s, s), TextLastWasCr(salt_o, o)) =>
+                salt_s == salt_o && s == o,
 
             _ => false,
         }
@@ -66,9 +82,9 @@ impl<T> HashingMode<T> {
     pub(crate) fn map<U, F: Fn(&T) -> U>(&self, f: F) -> HashingMode<U> {
         use self::HashingMode::*;
         match self {
-            Binary(t) => Binary(f(t)),
-            Text(t) => Text(f(t)),
-            TextLastWasCr(t) => TextLastWasCr(f(t)),
+            Binary(salt, t) => Binary(salt.clone(), f(t)),
+            Text(salt, t) => Text(salt.clone(), f(t)),
+            TextLastWasCr(salt, t) => TextLastWasCr(salt.clone(), f(t)),
         }
     }
 
@@ -76,44 +92,62 @@ impl<T> HashingMode<T> {
                                                  -> Result<HashingMode<U>> {
         use self::HashingMode::*;
         match self {
-            Binary(t) => Ok(Binary(f(t)?)),
-            Text(t) => Ok(Text(f(t)?)),
-            TextLastWasCr(t) => Ok(TextLastWasCr(f(t)?)),
+            Binary(salt, t) => Ok(Binary(salt.clone(), f(t)?)),
+            Text(salt, t) => Ok(Text(salt.clone(), f(t)?)),
+            TextLastWasCr(salt, t) => Ok(TextLastWasCr(salt.clone(), f(t)?)),
+        }
+    }
+
+    pub(crate) fn salt(&self) -> &[u8] {
+        use self::HashingMode::*;
+        match self {
+            Binary(salt, _t) => salt,
+            Text(salt, _t) => salt,
+            TextLastWasCr(salt, _t) => salt,
         }
     }
 
     pub(crate) fn as_ref(&self) -> &T {
         use self::HashingMode::*;
         match self {
-            Binary(t) => t,
-            Text(t) => t,
-            TextLastWasCr(t) => t,
+            Binary(_salt, t) => t,
+            Text(_salt, t) => t,
+            TextLastWasCr(_salt, t) => t,
         }
     }
 
     pub(crate) fn as_mut(&mut self) -> &mut T {
         use self::HashingMode::*;
         match self {
-            Binary(t) => t,
-            Text(t) => t,
-            TextLastWasCr(t) => t,
+            Binary(_salt, t) => t,
+            Text(_salt, t) => t,
+            TextLastWasCr(_salt, t) => t,
         }
     }
 
-    pub(crate) fn for_signature(t: T, typ: SignatureType) -> Self {
+    pub(crate) fn for_signature(t: T, s: &Signature) -> Self {
+        match s {
+            Signature::V3(s) => Self::for_salt_and_type(t, &[], s.typ()),
+            Signature::V4(s) => Self::for_salt_and_type(t, &[], s.typ()),
+            Signature::V6(s) => Self::for_salt_and_type(t, s.salt(), s.typ()),
+        }
+    }
+    pub(crate) fn for_salt_and_type(t: T, salt: &[u8], typ: SignatureType)
+                                    -> Self
+    {
         if typ == SignatureType::Text {
-            HashingMode::Text(t)
+            HashingMode::Text(salt.into(), t)
         } else {
-            HashingMode::Binary(t)
+            HashingMode::Binary(salt.into(), t)
         }
     }
 
     pub(crate) fn into_inner(self) -> T {
         use self::HashingMode::*;
         match self {
-            Binary(t) => t,
-            Text(t) => t,
-            TextLastWasCr(t) => t,
+            Binary(_salt, t) => t,
+            Text(_salt, t) => t,
+            TextLastWasCr(_salt, t) => t,
         }
     }
 }
@@ -132,9 +166,9 @@ impl<D> HashingMode<D>
         }
 
         let (h, mut last_was_cr) = match self {
-            HashingMode::Text(h) => (h, false),
-            HashingMode::TextLastWasCr(h) => (h, true),
-            HashingMode::Binary(h) => return h.update(data),
+            HashingMode::Text(_salt, h) => (h, false),
+            HashingMode::TextLastWasCr(_salt, h) => (h, true),
+            HashingMode::Binary(_salt, h) => return h.update(data),
         };
 
         let mut line = data;
@@ -173,19 +207,21 @@ impl<D> HashingMode<D>
         }
 
         match (&mut *self, last_is_cr) {
-            (&mut HashingMode::Text(_), false) => {
+            (&mut HashingMode::Text(_, _), false) => {
                 // This is the common case.  Getting a crlf that is
                 // split across two chunks is extremely rare.  Hence,
                 // the clones used to change the variant are rarely
                 // needed.
             },
-            (&mut HashingMode::Text(ref mut h), true) => {
-                *self = HashingMode::TextLastWasCr(h.clone());
+            (&mut HashingMode::Text(ref mut salt, ref mut h), true) => {
+                *self =
+                    HashingMode::TextLastWasCr(std::mem::take(salt), h.clone());
             }
-            (&mut HashingMode::TextLastWasCr(ref mut h), false) => {
-                *self = HashingMode::Text(h.clone());
+            (&mut HashingMode::TextLastWasCr(ref mut salt, ref mut h), false) =>
+            {
+                *self = HashingMode::Text(std::mem::take(salt), h.clone());
             },
-            (&mut HashingMode::TextLastWasCr(_), true) => (),
+            (&mut HashingMode::TextLastWasCr(_, _), true) => (),
 
             _ => unreachable!("handled above"),
         }
@@ -222,8 +258,10 @@ impl<R: BufferedReader<Cookie>> HashedReader<R> {
         let mut cookie = Cookie::default();
 
         for mode in algos {
+            let salt = mode.salt().to_vec();
             let mode = mode.mapf(|algo| {
-                let ctx = algo.context()?;
+                let mut ctx = algo.context()?;
+                ctx.update(&salt);
                 Ok(ctx)
             })?;
 
@@ -265,10 +303,10 @@ impl Cookie {
             assert!(ngroups > 1);
             for h in self.sig_groups[ngroups-2].hashes.iter_mut()
             {
-                t!("({:?}): group {} {:?} hashing {} stashed bytes: {}",
-                   hashes_for, ngroups-2, h.map(|ctx| ctx.algo()),
-                   stashed_data.len(),
-                   crate::fmt::hex::encode_pretty(&stashed_data));
+                t!("({:?}): group {} {:?} hashing {} stashed bytes.",
+                   hashes_for, ngroups-2,
+                   h.map(|ctx| ctx.algo()),
+                   data.len());
 
                 h.update(&stashed_data);
             }
@@ -516,7 +554,7 @@ mod test {
             let mut reader
                 = HashedReader::new(reader, HashesFor::MDC,
                                     test.expected.keys().cloned()
-                                    .map(HashingMode::Binary)
+                                    .map(|v| HashingMode::Binary(vec![], v))
                                     .collect()).unwrap();
 
             assert_eq!(reader.steal_eof().unwrap(), test.data);
@@ -549,7 +587,8 @@ mod test {
         ] {
             for chunk_size in &[ text.len(), 1 ] {
                 let mut ctx
-                    = HashingMode::Text(HashAlgorithm::SHA256.context()?);
+                    = HashingMode::Text(vec![],
+                                        HashAlgorithm::SHA256.context()?);
                 for chunk in text.as_bytes().chunks(*chunk_size) {
                     ctx.update(chunk);
                 }
@@ -585,7 +624,7 @@ mod test {
             hash_buffered_reader(
                 reader,
                 &expected.keys().cloned()
-                    .map(HashingMode::Binary).
+                    .map(|v| HashingMode::Binary(vec![], v)).
                     collect::<Vec<_>>())
             .unwrap();
 

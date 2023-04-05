@@ -168,9 +168,17 @@ pub use container::Body;
 
 pub mod prelude;
 
-use crate::crypto::{
-    KeyPair,
-    Password,
+use crate::{
+    crypto::{
+        KeyPair,
+        Password,
+    },
+    types::{
+        SignatureType,
+        PublicKeyAlgorithm,
+        HashAlgorithm,
+    },
+    KeyHandle,
 };
 
 mod any;
@@ -451,7 +459,8 @@ impl Deref for Packet {
         match self {
             Packet::Unknown(ref packet) => &packet.common,
             Packet::Signature(ref packet) => &packet.common,
-            Packet::OnePassSig(ref packet) => &packet.common,
+            Packet::OnePassSig(OnePassSig::V3(ref packet)) => &packet.common,
+            Packet::OnePassSig(OnePassSig::V6(ref packet)) => &packet.common.common,
             Packet::PublicKey(ref packet) => &packet.common,
             Packet::PublicSubkey(ref packet) => &packet.common,
             Packet::SecretKey(ref packet) => &packet.common,
@@ -478,7 +487,8 @@ impl DerefMut for Packet {
         match self {
             Packet::Unknown(ref mut packet) => &mut packet.common,
             Packet::Signature(ref mut packet) => &mut packet.common,
-            Packet::OnePassSig(ref mut packet) => &mut packet.common,
+            Packet::OnePassSig(OnePassSig::V3(ref mut packet)) => &mut packet.common,
+            Packet::OnePassSig(OnePassSig::V6(ref mut packet)) => &mut packet.common.common,
             Packet::PublicKey(ref mut packet) => &mut packet.common,
             Packet::PublicSubkey(ref mut packet) => &mut packet.common,
             Packet::SecretKey(ref mut packet) => &mut packet.common,
@@ -1091,6 +1101,8 @@ impl DerefMut for Signature {
 pub enum OnePassSig {
     /// OnePassSig packet version 3.
     V3(self::one_pass_sig::OnePassSig3),
+    /// OnePassSig packet version 6.
+    V6(self::one_pass_sig::OnePassSig6),
 }
 assert_send_and_sync!(OnePassSig);
 
@@ -1099,6 +1111,71 @@ impl OnePassSig {
     pub fn version(&self) -> u8 {
         match self {
             OnePassSig::V3(_) => 3,
+            OnePassSig::V6(_) => 6,
+        }
+    }
+
+    /// Gets the signature type.
+    pub fn typ(&self) -> SignatureType {
+        match self {
+            OnePassSig::V3(p) => p.typ(),
+            OnePassSig::V6(p) => p.typ(),
+        }
+    }
+
+    /// Gets the public key algorithm.
+    pub fn pk_algo(&self) -> PublicKeyAlgorithm {
+        match self {
+            OnePassSig::V3(p) => p.pk_algo(),
+            OnePassSig::V6(p) => p.pk_algo(),
+        }
+    }
+
+    /// Gets the hash algorithm.
+    pub fn hash_algo(&self) -> HashAlgorithm {
+        match self {
+            OnePassSig::V3(p) => p.hash_algo(),
+            OnePassSig::V6(p) => p.hash_algo(),
+        }
+    }
+
+    /// Gets the salt, if any.
+    pub fn salt(&self) -> Option<&[u8]> {
+        match self {
+            OnePassSig::V3(_) => None,
+            OnePassSig::V6(p) => Some(p.salt()),
+        }
+    }
+
+    /// Gets the issuer.
+    pub fn issuer(&self) -> KeyHandle {
+        match self {
+            OnePassSig::V3(p) => p.issuer().into(),
+            OnePassSig::V6(p) => p.issuer().into(),
+        }
+    }
+
+    /// Gets the last flag.
+    pub fn last(&self) -> bool {
+        match self {
+            OnePassSig::V3(p) => p.last(),
+            OnePassSig::V6(p) => p.last(),
+        }
+    }
+
+    /// Sets the last flag.
+    pub fn set_last(&mut self, last: bool) -> bool {
+        match self {
+            OnePassSig::V3(p) => p.set_last(last),
+            OnePassSig::V6(p) => p.set_last(last),
+        }
+    }
+
+    /// Gets the raw value of the last flag.
+    pub fn last_raw(&self) -> u8 {
+        match self {
+            OnePassSig::V3(p) => p.last_raw(),
+            OnePassSig::V6(p) => p.last_raw(),
         }
     }
 }
@@ -1115,28 +1192,9 @@ impl<'a> std::convert::TryFrom<&'a Signature> for OnePassSig {
     fn try_from(s: &'a Signature) -> Result<Self> {
         match s.version() {
             4 => one_pass_sig::OnePassSig3::try_from(s).map(Into::into),
+            6 => one_pass_sig::OnePassSig6::try_from(s).map(Into::into),
             n => Err(Error::InvalidOperation(
                 format!("Unsupported signature version {}", n)).into()),
-         }
-     }
-}
-
-// Trivial forwarder for singleton enum.
-impl Deref for OnePassSig {
-    type Target = one_pass_sig::OnePassSig3;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            OnePassSig::V3(ops) => ops,
-        }
-    }
-}
-
-// Trivial forwarder for singleton enum.
-impl DerefMut for OnePassSig {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            OnePassSig::V3(ref mut ops) => ops,
         }
     }
 }

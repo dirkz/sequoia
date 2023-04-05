@@ -2553,7 +2553,7 @@ impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
 
         // Compute the necessary hashes.
         let algos: Vec<_> = sigs.iter().map(|s| {
-            HashingMode::for_signature(s.hash_algo(), s.typ())
+            HashingMode::for_signature(s.hash_algo(), s)
         }).collect();
         let hashes =
             crate::parse::hashed_reader::hash_buffered_reader(data, &algos)?;
@@ -2561,7 +2561,7 @@ impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
         // Attach the digests.
         for sig in sigs.iter_mut() {
             let need_hash =
-                HashingMode::for_signature(sig.hash_algo(), sig.typ());
+                HashingMode::for_signature(sig.hash_algo(), sig);
             // Note: |hashes| < 10, most likely 1.
             for mode in hashes.iter()
                 .filter(|m| m.map(|c| c.algo()) == need_hash)

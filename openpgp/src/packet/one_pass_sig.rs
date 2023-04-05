@@ -19,6 +19,9 @@ use crate::HashAlgorithm;
 use crate::PublicKeyAlgorithm;
 use crate::SignatureType;
 
+mod v6;
+pub use v6::OnePassSig6;
+
 /// Holds a one-pass signature packet.
 ///
 /// See [Section 5.4 of RFC 4880] for details.
@@ -172,7 +175,11 @@ impl<'a> std::convert::TryFrom<&'a Signature> for OnePassSig3 {
 #[cfg(test)]
 impl Arbitrary for super::OnePassSig {
     fn arbitrary(g: &mut Gen) -> Self {
-        OnePassSig3::arbitrary(g).into()
+        if Arbitrary::arbitrary(g) {
+            OnePassSig3::arbitrary(g).into()
+        } else {
+            OnePassSig6::arbitrary(g).into()
+        }
     }
 }
 
