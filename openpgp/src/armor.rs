@@ -1506,7 +1506,7 @@ impl<'a> Reader<'a> {
             let mut opss = Vec::with_capacity(sigs.len());
             for p in sigs.iter().rev() {
                 if let Packet::Signature(sig) = p {
-                    if let Ok(ops) = OnePassSig3::try_from(sig) {
+                    if let Ok(ops) = OnePassSig::try_from(sig) {
                         opss.push(ops);
                     }
                 }
@@ -2406,19 +2406,9 @@ mod test {
               assert_eq!(reference.pop(), Some(b'\n'));
               reference
           }, HashAlgorithm::SHA256)?;
-        f(crate::tests::message("a-cypherpunks-manifesto.txt.cleartext.sig"),
-          {
-              // The test vector, created by GnuPG, does not preserve
-              // the final newline.
-              //
-              // The transformation process trims trailing whitespace,
-              // and the manifesto has a trailing whitespace right at
-              // the end.
-              let mut manifesto = crate::tests::manifesto().to_vec();
-              assert_eq!(manifesto.pop(), Some(b'\n'));
-              assert_eq!(manifesto.pop(), Some(b' '));
-              manifesto
-          }, HashAlgorithm::SHA256)?;
+        f(crate::tests::file("crypto-refresh/cleartext-signed-message.txt"),
+          crate::tests::file("crypto-refresh/cleartext-signed-message.txt.plain"),
+          HashAlgorithm::SHA512)?;
         Ok(())
     }
 }
