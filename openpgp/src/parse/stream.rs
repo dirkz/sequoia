@@ -931,7 +931,7 @@ impl<V: VerificationHelper> DecryptionHelper for NoDecryptionHelper<V> {
     fn decrypt<D>(&mut self, _: &[PKESK], _: &[SKESK],
                   _: Option<SymmetricAlgorithm>,
                   _: D) -> Result<Option<Fingerprint>>
-        where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+        where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
     {
         unreachable!("This is not used for verifications")
     }
@@ -1733,7 +1733,7 @@ enum Mode {
 ///     fn decrypt<D>(&mut self, _: &[PKESK], skesks: &[SKESK],
 ///                   _sym_algo: Option<SymmetricAlgorithm>,
 ///                   mut decrypt: D) -> Result<Option<openpgp::Fingerprint>>
-///         where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+///         where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
 ///     {
 ///         skesks[0].decrypt(&"streng geheim".into())
 ///             .map(|(algo, session_key)| decrypt(algo, &session_key));
@@ -1904,7 +1904,7 @@ impl<'a> DecryptorBuilder<'a> {
     /// #   fn decrypt<D>(&mut self, _: &[PKESK], skesks: &[SKESK],
     /// #                 _sym_algo: Option<SymmetricAlgorithm>,
     /// #                 mut decrypt: D) -> Result<Option<Fingerprint>>
-    /// #       where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+    /// #       where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
     /// #   {
     /// #       Ok(None)
     /// #   }
@@ -1971,7 +1971,7 @@ impl<'a> DecryptorBuilder<'a> {
     /// #   fn decrypt<D>(&mut self, _: &[PKESK], skesks: &[SKESK],
     /// #                 _sym_algo: Option<SymmetricAlgorithm>,
     /// #                 mut decrypt: D) -> Result<Option<Fingerprint>>
-    /// #       where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+    /// #       where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
     /// #   {
     /// #       Ok(None)
     /// #   }
@@ -2036,7 +2036,7 @@ impl<'a> DecryptorBuilder<'a> {
     /// #   fn decrypt<D>(&mut self, _: &[PKESK], skesks: &[SKESK],
     /// #                 _sym_algo: Option<SymmetricAlgorithm>,
     /// #                 mut decrypt: D) -> Result<Option<Fingerprint>>
-    /// #       where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+    /// #       where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
     /// #   {
     /// #       Ok(None)
     /// #   }
@@ -2120,18 +2120,17 @@ pub trait DecryptionHelper {
     ///
     /// ```
     /// use sequoia_openpgp as openpgp;
-    /// use openpgp::{Fingerprint, Cert, Result};
-    /// # use openpgp::KeyID;
+    /// use openpgp::{Cert, Fingerprint, KeyHandle, KeyID, Result};
     /// use openpgp::crypto::SessionKey;
     /// use openpgp::types::SymmetricAlgorithm;
     /// use openpgp::packet::{PKESK, SKESK};
     /// # use openpgp::packet::{Key, key::*};
     /// use openpgp::parse::stream::*;
     /// # fn lookup_cache(_: &[PKESK], _: &[SKESK])
-    /// #                 -> Option<(Option<Fingerprint>, SymmetricAlgorithm, SessionKey)> {
+    /// #                 -> Option<(Option<Fingerprint>, Option<SymmetricAlgorithm>, SessionKey)> {
     /// #     unimplemented!()
     /// # }
-    /// # fn lookup_key(_: &KeyID)
+    /// # fn lookup_key(_: Option<KeyHandle>)
     /// #               -> Option<(Fingerprint, Key<SecretParts, UnspecifiedRole>)> {
     /// #     unimplemented!()
     /// # }
@@ -2144,7 +2143,7 @@ pub trait DecryptionHelper {
     ///     fn decrypt<D>(&mut self, pkesks: &[PKESK], skesks: &[SKESK],
     ///                   sym_algo: Option<SymmetricAlgorithm>,
     ///                   mut decrypt: D) -> Result<Option<Fingerprint>>
-    ///         where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+    ///         where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
     ///     {
     ///         // Try to decrypt, from the most convenient method to the
     ///         // least convenient one.
@@ -2175,7 +2174,9 @@ pub trait DecryptionHelper {
     ///         // Third, we try to decrypt PKESK packets with
     ///         // wildcard recipients using those keys that we can
     ///         // use without prompting for a password.
-    ///         for pkesk in pkesks.iter().filter(|p| p.recipient().is_wildcard()) {
+    ///         for pkesk in pkesks.iter().filter(
+    ///             |p| p.recipient().is_none())
+    ///         {
     ///             for (fp, key) in all_keys() {
     ///                 if ! key.secret().is_encrypted() {
     ///                     let mut keypair = key.clone().into_keypair()?;
@@ -2226,7 +2227,7 @@ pub trait DecryptionHelper {
     fn decrypt<D>(&mut self, pkesks: &[PKESK], skesks: &[SKESK],
                   sym_algo: Option<SymmetricAlgorithm>,
                   decrypt: D) -> Result<Option<Fingerprint>>
-        where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool;
+        where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool;
 }
 
 impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
@@ -2448,7 +2449,7 @@ impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
                         let decryption_proxy = |algo, secret: &SessionKey| {
                             // Take the algo from the AED packet over
                             // the dummy one from the SKESK6 packet.
-                            let algo = sym_algo_hint.unwrap_or(algo);
+                            let algo = sym_algo_hint.or(algo);
                             let result = pp.decrypt(algo, secret);
                             t!("pp.decrypt({:?}, {:?}) => {:?}",
                                algo, secret, result);
@@ -2471,8 +2472,13 @@ impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
                                 "No session key decrypted".into()).into());
                     }
 
-                    let sym_algo =
-                        sym_algo.expect("if we got here, sym_algo is set");
+                    let sym_algo = if let Some(Some(a)) = sym_algo {
+                        a
+                    } else {
+                        return Err(Error::InvalidOperation(
+                            "No symmetric algorithm known".into()).into());
+                    };
+
                     v.policy.symmetric_algorithm(sym_algo)?;
                     if let Packet::AED(ref p) = pp.packet {
                         v.policy.aead_algorithm(p.aead())?;
@@ -3157,7 +3163,7 @@ pub mod test {
         fn decrypt<D>(&mut self, pkesks: &[PKESK], skesks: &[SKESK],
                       sym_algo: Option<SymmetricAlgorithm>, mut decrypt: D)
                       -> Result<Option<Fingerprint>>
-            where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+            where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
         {
             tracer!(TRACE, "VHelper::decrypt", TRACE_INDENT);
 
@@ -3181,10 +3187,10 @@ pub mod test {
             }
 
             t!("Trying PKESKS: {:?}", pkesks);
-            for pkesk in pkesks {
+            for pkesk in pkesks.iter().filter(|p| p.recipient().is_some()) {
                 for key in &self.keys {
                     for subkey in key.with_policy(&p, None)?.keys().secret()
-                        .key_handle(pkesk.recipient())
+                        .key_handle(pkesk.recipient().unwrap())
                     {
                         t!("Trying to decrypt {:?} with {:?}", pkesk, subkey);
                         if let Some((algo, sk)) =
@@ -3549,7 +3555,7 @@ pub mod test {
             fn decrypt<D>(&mut self, _: &[PKESK], _: &[SKESK],
                           _: Option<SymmetricAlgorithm>, _: D)
                           -> Result<Option<Fingerprint>>
-                where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+                where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
             {
                 unreachable!();
             }
@@ -3807,7 +3813,7 @@ pub mod test {
             fn decrypt<D>(&mut self, _: &[PKESK], s: &[SKESK],
                           _: Option<SymmetricAlgorithm>, mut decrypt: D)
                           -> Result<Option<Fingerprint>>
-            where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+            where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
             {
                 let (algo, sk) = s[0].decrypt(&"123".into()).unwrap();
                 let r = decrypt(algo, &sk);

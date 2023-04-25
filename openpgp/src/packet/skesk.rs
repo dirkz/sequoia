@@ -33,12 +33,13 @@ impl SKESK {
     /// tuple of the symmetric cipher to use with the key and the key
     /// itself.
     pub fn decrypt(&self, password: &Password)
-        -> Result<(SymmetricAlgorithm, SessionKey)>
+        -> Result<(Option<SymmetricAlgorithm>, SessionKey)>
     {
         match self {
-            SKESK::V4(ref s) => s.decrypt(password),
+            SKESK::V4(s) => s.decrypt(password)
+                .map(|(algo, sk)| (Some(algo), sk)),
             SKESK::V6(ref s) =>
-                Ok((SymmetricAlgorithm::Unencrypted, s.decrypt(password)?)),
+                Ok((None, s.decrypt(password)?)),
         }
     }
 }
@@ -637,11 +638,11 @@ mod test {
             fn decrypt<D>(&mut self, _: &[PKESK], skesks: &[SKESK],
                           _: Option<SymmetricAlgorithm>,
                           mut decrypt: D) -> Result<Option<Fingerprint>>
-            where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+            where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
             {
                 assert_eq!(skesks.len(), 1);
                 let (cipher, sk) = skesks[0].decrypt(&"password".into())?;
-                assert_eq!(cipher, SymmetricAlgorithm::AES256);
+                assert_eq!(cipher, Some(SymmetricAlgorithm::AES256));
                 let r = decrypt(cipher, &sk);
                 assert!(r);
                 Ok(None)

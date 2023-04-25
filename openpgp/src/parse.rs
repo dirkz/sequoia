@@ -3742,6 +3742,7 @@ impl PKESK {
         let version = php_try!(php.parse_u8("version"));
         match version {
             3 => PKESK3::parse(php),
+            6 => PKESK6::parse(php),
             _ => php.fail("unknown version"),
         }
     }
@@ -3771,12 +3772,56 @@ impl PKESK3 {
 impl_parse_with_buffered_reader!(
     PKESK3,
     |reader| -> Result<Self> {
-        PKESK::from_reader(reader).map(|p| match p {
-            PKESK::V3(p) => p,
-            // XXX: Once we have a second variant.
-            //
-            // p => Err(Error::InvalidOperation(
-            //     format!("Not a PKESKv3 packet: {:?}", p)).into()),
+        PKESK::from_reader(reader).and_then(|p| match p {
+            PKESK::V3(p) => Ok(p),
+            p => Err(Error::InvalidOperation(
+                 format!("Not a PKESKv3 packet: {:?}", p)).into()),
+        })
+    });
+
+impl PKESK6 {
+    /// Parses the body of an PKESKv6 packet.
+    fn parse(mut php: PacketHeaderParser) -> Result<PacketParser> {
+        tracer!(TRACE, "PKESK6::parse", php.recursion_depth());
+        make_php_try!(php);
+        let fp_len = php_try!(php.parse_u8("recipient_len"));
+        let fingerprint = if fp_len == 0 {
+            None
+        } else {
+            // Get the version and sanity check the length.
+            let fp_version = php_try!(php.parse_u8("recipient_version"));
+            if let Some(expected_length) = match fp_version {
+                4 => Some(20),
+                6 => Some(32),
+                _ => None,
+            } {
+                if fp_len - 1 != expected_length {
+                    return php.fail("bad fingerprint length");
+                }
+            }
+            Some(Fingerprint::from_bytes(
+                &php_try!(php.parse_bytes("recipient", (fp_len - 1).into()))))
+        };
+
+        let pk_algo: PublicKeyAlgorithm =
+            php_try!(php.parse_u8("pk_algo")).into();
+        if ! pk_algo.for_encryption() { // XXX
+            return php.fail("not an encryption algorithm");
+        }
+        let mpis = crypto::mpi::Ciphertext::_parse(pk_algo, &mut php)?;
+
+        let pkesk = php_try!(PKESK6::new(fingerprint, pk_algo, mpis));
+        php.ok(pkesk.into())
+    }
+}
+
+impl_parse_with_buffered_reader!(
+    PKESK6,
+    |reader| -> Result<Self> {
+        PKESK::from_reader(reader).and_then(|p| match p {
+            PKESK::V6(p) => Ok(p),
+            p => Err(Error::InvalidOperation(
+                 format!("Not a PKESKv6 packet: {:?}", p)).into()),
         })
     });
 
@@ -6050,8 +6095,18 @@ impl<'a> PacketParser<'a> {
     /// OpenPGP].
     ///
     ///   [Format Oracles on OpenPGP]: https://www.ssi.gouv.fr/uploads/2015/05/format-Oracles-on-OpenPGP.pdf
-    pub fn decrypt(&mut self, algo: SymmetricAlgorithm, key: &SessionKey)
-        -> Result<()>
+    pub fn decrypt<A>(&mut self, algo: A, key: &SessionKey)
+                      -> Result<()>
+    where
+        A: Into<Option<SymmetricAlgorithm>>,
+    {
+        self.decrypt_(algo.into(), key)
+    }
+
+    fn decrypt_(&mut self,
+                algo: Option<SymmetricAlgorithm>,
+                key: &SessionKey)
+                -> Result<()>
     {
         let indent = self.recursion_depth();
         tracer!(TRACE, "PacketParser::decrypt", indent);
@@ -6065,14 +6120,22 @@ impl<'a> PacketParser<'a> {
                 "Packet not encrypted.".to_string()).into());
         }
 
-        if algo.key_size()? != key.len () {
-            return Err(Error::InvalidOperation(
-                format!("Bad key size: {} expected: {}",
-                        key.len(), algo.key_size()?)).into());
-        }
-
         match self.packet.clone() {
             Packet::SEIP(_) => {
+                let algo = if let Some(a) = algo {
+                    a
+                } else {
+                    return Err(Error::InvalidOperation(
+                        "Trying to decrypt a SEIPDv1 packet: \
+                         no symmetric algorithm given".into()).into());
+                };
+
+                if algo.key_size()? != key.len () {
+                    return Err(Error::InvalidOperation(
+                        format!("Bad key size: {} expected: {}",
+                                key.len(), algo.key_size()?)).into());
+                }
+
                 // Get the first blocksize plus two bytes and check
                 // whether we can decrypt them using the provided key.
                 // Don't actually consume them in case we can't.
@@ -6515,7 +6578,7 @@ mod test {
                 let key = crate::fmt::from_hex(test.key_hex, false)
                     .unwrap().into();
 
-                pp.decrypt(test.algo, &key).unwrap();
+                pp.decrypt(Some(test.algo), &key).unwrap();
             } else {
                 panic!("Expected a SEIP/AED packet.  Got: {:?}", ppr);
             }
@@ -6612,7 +6675,7 @@ mod test {
                     Packet::SEIP(_) | Packet::AED(_) => {
                         let key = crate::fmt::from_hex(test.key_hex, false)
                             .unwrap().into();
-                        pp.decrypt(test.algo, &key).unwrap();
+                        pp.decrypt(Some(test.algo), &key).unwrap();
                     },
                     Packet::Literal(_) => {
                         assert!(! saw_literal);

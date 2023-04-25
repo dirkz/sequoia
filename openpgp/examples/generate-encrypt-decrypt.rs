@@ -121,7 +121,7 @@ impl<'a> DecryptionHelper for Helper<'a> {
                   sym_algo: Option<SymmetricAlgorithm>,
                   mut decrypt: D)
                   -> openpgp::Result<Option<openpgp::Fingerprint>>
-        where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+        where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
     {
         let key = self.secret.keys().unencrypted_secret()
             .with_policy(self.policy, None)
