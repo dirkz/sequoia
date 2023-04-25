@@ -2775,6 +2775,16 @@ impl Marshal for PKESK {
     fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
         match self {
             PKESK::V3(ref p) => p.serialize(o),
+            PKESK::V6(p) => p.serialize(o),
+        }
+    }
+}
+
+impl NetLength for PKESK {
+    fn net_len(&self) -> usize {
+        match self {
+            PKESK::V3(p) => p.net_len(),
+            PKESK::V6(p) => p.net_len(),
         }
     }
 }
@@ -2783,12 +2793,15 @@ impl MarshalInto for PKESK {
     fn serialized_len(&self) -> usize {
         match self {
             PKESK::V3(ref p) => p.serialized_len(),
+            PKESK::V6(p) => p.serialized_len(),
         }
     }
 
     fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
         match self {
             PKESK::V3(p) =>
+                generic_serialize_into(p, MarshalInto::serialized_len(p), buf),
+            PKESK::V6(p) =>
                 generic_serialize_into(p, MarshalInto::serialized_len(p), buf),
         }
     }
@@ -2816,6 +2829,52 @@ impl NetLength for PKESK3 {
 }
 
 impl MarshalInto for PKESK3 {
+    fn serialized_len(&self) -> usize {
+        self.net_len()
+    }
+
+    fn serialize_into(&self, buf: &mut [u8]) -> Result<usize> {
+        generic_serialize_into(self, MarshalInto::serialized_len(self), buf)
+    }
+}
+
+impl seal::Sealed for PKESK6 {}
+impl Marshal for PKESK6 {
+    fn serialize(&self, o: &mut dyn std::io::Write) -> Result<()> {
+        write_byte(o, 6)?; // Version.
+        if let Some(recipient) = self.recipient() {
+             // Recipient length.
+            write_byte(o, ((recipient as &dyn MarshalInto).serialized_len() + 1) as u8)?;
+            match recipient {
+                Fingerprint::V4(_) => write_byte(o, 4)?,
+                Fingerprint::V6(_) => write_byte(o, 6)?,
+                Fingerprint::Invalid(_) => write_byte(o, 0xff)?,
+            }
+            (recipient as &dyn Marshal).serialize(o)?;
+        } else {
+            // No recipient.
+            write_byte(o, 0)?;
+        }
+
+        write_byte(o, self.pk_algo().into())?;
+        self.esk().serialize(o)?;
+
+        Ok(())
+    }
+}
+
+impl NetLength for PKESK6 {
+    fn net_len(&self) -> usize {
+        1 // Version.
+            + 1 // Recipient length.
+            // Recipient's versioned fingerprint, if any:
+            + self.recipient().map(|r| r.as_bytes().len() + 1).unwrap_or(0)
+            + 1 // Algo.
+            + self.esk().serialized_len()
+    }
+}
+
+impl MarshalInto for PKESK6 {
     fn serialized_len(&self) -> usize {
         self.net_len()
     }

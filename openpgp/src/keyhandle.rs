@@ -134,6 +134,16 @@ impl From<KeyHandle> for KeyID {
     }
 }
 
+impl From<Option<KeyHandle>> for KeyID {
+    fn from(i: Option<KeyHandle>) -> Self {
+        match i {
+            Some(KeyHandle::Fingerprint(i)) => i.into(),
+            Some(KeyHandle::KeyID(i)) => i,
+            None => KeyID::wildcard(),
+        }
+    }
+}
+
 impl From<&KeyHandle> for KeyID {
     fn from(i: &KeyHandle) -> Self {
         match i {

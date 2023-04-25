@@ -170,13 +170,16 @@ pub mod prelude;
 
 use crate::{
     crypto::{
+        Decryptor,
         KeyPair,
         Password,
+        SessionKey,
     },
     types::{
-        SignatureType,
-        PublicKeyAlgorithm,
         HashAlgorithm,
+        SignatureType,
+        SymmetricAlgorithm,
+        PublicKeyAlgorithm,
     },
     KeyHandle,
 };
@@ -478,7 +481,8 @@ impl Deref for Packet {
             Packet::UserAttribute(ref packet) => &packet.common,
             Packet::Literal(ref packet) => &packet.common,
             Packet::CompressedData(ref packet) => &packet.common,
-            Packet::PKESK(ref packet) => &packet.common,
+            Packet::PKESK(PKESK::V3(packet)) => &packet.common,
+            Packet::PKESK(PKESK::V6(packet)) => &packet.common,
             Packet::SKESK(SKESK::V4(ref packet)) => &packet.common,
             Packet::SKESK(SKESK::V6(ref packet)) => &packet.skesk4.common,
             Packet::SEIP(ref packet) => &packet.common,
@@ -507,7 +511,8 @@ impl DerefMut for Packet {
             Packet::UserAttribute(ref mut packet) => &mut packet.common,
             Packet::Literal(ref mut packet) => &mut packet.common,
             Packet::CompressedData(ref mut packet) => &mut packet.common,
-            Packet::PKESK(ref mut packet) => &mut packet.common,
+            Packet::PKESK(PKESK::V3(packet)) => &mut packet.common,
+            Packet::PKESK(PKESK::V6(packet)) => &mut packet.common,
             Packet::SKESK(SKESK::V4(ref mut packet)) => &mut packet.common,
             Packet::SKESK(SKESK::V6(ref mut packet)) => &mut packet.skesk4.common,
             Packet::SEIP(ref mut packet) => &mut packet.common,
@@ -1232,6 +1237,8 @@ impl<'a> std::convert::TryFrom<&'a Signature> for OnePassSig {
 pub enum PKESK {
     /// PKESK packet version 3.
     V3(self::pkesk::PKESK3),
+    /// PKESK packet version 6.
+    V6(self::pkesk::PKESK6),
 }
 assert_send_and_sync!(PKESK);
 
@@ -1240,6 +1247,65 @@ impl PKESK {
     pub fn version(&self) -> u8 {
         match self {
             PKESK::V3(_) => 3,
+            PKESK::V6(_) => 6,
+        }
+    }
+
+    /// Gets the recipient.
+    pub fn recipient(&self) -> Option<KeyHandle> {
+        match self {
+            PKESK::V3(p) => {
+                let id = p.recipient();
+                if id.is_wildcard() {
+                    None
+                } else {
+                    Some(id.into())
+                }
+            },
+            PKESK::V6(p) => p.recipient().map(Into::into),
+        }
+    }
+
+    /// Gets the public key algorithm.
+    pub fn pk_algo(&self) -> PublicKeyAlgorithm {
+        match self {
+            PKESK::V3(p) => p.pk_algo(),
+            PKESK::V6(p) => p.pk_algo(),
+        }
+    }
+
+    /// Gets the encrypted session key.
+    pub fn esk(&self) -> &crate::crypto::mpi::Ciphertext {
+        match self {
+            PKESK::V3(p) => p.esk(),
+            PKESK::V6(p) => p.esk(),
+        }
+    }
+    /// Decrypts the encrypted session key.
+    ///
+    /// If the symmetric algorithm used to encrypt the message is
+    /// known in advance, it should be given as argument.  This allows
+    /// us to reduce the side-channel leakage of the decryption
+    /// operation for RSA.
+    ///
+    /// Returns the session key and symmetric algorithm used to
+    /// encrypt the following payload.
+    ///
+    /// Returns `None` on errors.  This prevents leaking information
+    /// to an attacker, which could lead to compromise of secret key
+    /// material with certain algorithms (RSA).  See [Section 14 of
+    /// RFC 4880].
+    ///
+    ///   [Section 14 of RFC 4880]: https://tools.ietf.org/html/rfc4880#section-14
+    pub fn decrypt(&self, decryptor: &mut dyn Decryptor,
+                   sym_algo_hint: Option<SymmetricAlgorithm>)
+        -> Option<(Option<SymmetricAlgorithm>, SessionKey)>
+    {
+        match self {
+            PKESK::V3(p) => p.decrypt(decryptor, sym_algo_hint)
+                .map(|(s, k)| (Some(s), k)),
+            PKESK::V6(p) => p.decrypt(decryptor, sym_algo_hint)
+                .map(|k| (None, k)),
         }
     }
 }
@@ -1247,26 +1313,6 @@ impl PKESK {
 impl From<PKESK> for Packet {
     fn from(p: PKESK) -> Self {
         Packet::PKESK(p)
-    }
-}
-
-// Trivial forwarder for singleton enum.
-impl Deref for PKESK {
-    type Target = self::pkesk::PKESK3;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            PKESK::V3(ref p) => p,
-        }
-    }
-}
-
-// Trivial forwarder for singleton enum.
-impl DerefMut for PKESK {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            PKESK::V3(ref mut p) => p,
-        }
     }
 }
 

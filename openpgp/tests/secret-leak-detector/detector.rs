@@ -206,7 +206,7 @@ fn aes_256_decryption(ciphertext: &[u8]) -> Result<()> {
         fn decrypt<D>(&mut self, _: &[PKESK], skesks: &[SKESK],
                       _sym_algo: Option<SymmetricAlgorithm>,
                       mut decrypt: D) -> Result<Option<Fingerprint>>
-        where D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool
+        where D: FnMut(Option<SymmetricAlgorithm>, &SessionKey) -> bool
         {
             skesks[0].decrypt(&Password::from(NEEDLE))
                 .map(|(algo, session_key)| decrypt(algo, &session_key))?;
