@@ -4,7 +4,18 @@
 //! [`Decryptor`]: crate::crypto::Decryptor
 //! [`KeyPair`]: crate::crypto::KeyPair
 
-use nettle::{curve25519, ecc, ecdh, ecdsa, ed25519, dsa, rsa, random::Yarrow};
+use nettle::{
+    curve25519,
+    curve448,
+    dsa,
+    ecc,
+    ecdh,
+    ecdsa,
+    ed25519,
+    ed448,
+    rsa,
+    random::Yarrow,
+};
 
 use crate::{Error, Result};
 
@@ -26,7 +37,8 @@ impl Asymmetric for super::Backend {
             X25519 | Ed25519 |
             RSAEncryptSign | RSAEncrypt | RSASign | DSA | ECDH | ECDSA | EdDSA
                 => true,
-            X448 | Ed448 |
+            X448 | Ed448
+                => curve448::IS_SUPPORTED,
             ElGamalEncrypt | ElGamalEncryptSign | Private(_) | Unknown(_)
                 => false,
         }
@@ -66,6 +78,42 @@ impl Asymmetric for super::Backend {
         Ok(s)
     }
 
+    fn x448_generate_key() -> Result<(Protected, [u8; 56])> {
+        debug_assert_eq!(curve448::CURVE448_SIZE, 56);
+        if ! curve448::IS_SUPPORTED {
+            return Err(Error::UnsupportedPublicKeyAlgorithm(
+                PublicKeyAlgorithm::Ed448).into());
+        }
+        let mut rng = Yarrow::default();
+        let secret = curve448::private_key(&mut rng);
+        let mut public = [0; 56];
+        curve448::mul_g(&mut public, &secret)?;
+        Ok((secret.into(), public))
+    }
+
+    fn x448_derive_public(secret: &Protected) -> Result<[u8; 56]> {
+        debug_assert_eq!(curve448::CURVE448_SIZE, 56);
+        if ! curve448::IS_SUPPORTED {
+            return Err(Error::UnsupportedPublicKeyAlgorithm(
+                PublicKeyAlgorithm::Ed448).into());
+        }
+        let mut public = [0; 56];
+        curve448::mul_g(&mut public, secret)?;
+        Ok(public)
+    }
+
+    fn x448_shared_point(secret: &Protected, public: &[u8; 56])
+                           -> Result<Protected> {
+        debug_assert_eq!(curve448::CURVE448_SIZE, 56);
+        if ! curve448::IS_SUPPORTED {
+            return Err(Error::UnsupportedPublicKeyAlgorithm(
+                PublicKeyAlgorithm::Ed448).into());
+        }
+        let mut s: Protected = vec![0; 56].into();
+        curve448::mul(&mut s, secret, public)?;
+        Ok(s)
+    }
+
     fn ed25519_generate_key() -> Result<(Protected, [u8; 32])> {
         debug_assert_eq!(ed25519::ED25519_KEY_SIZE, 32);
         let mut rng = Yarrow::default();
@@ -97,6 +145,39 @@ impl Asymmetric for super::Backend {
         debug_assert_eq!(ed25519::ED25519_KEY_SIZE, 32);
         debug_assert_eq!(ed25519::ED25519_SIGNATURE_SIZE, 64);
         Ok(ed25519::verify(public, digest, signature)?)
+    }
+
+    fn ed448_generate_key() -> Result<(Protected, [u8; 57])> {
+        debug_assert_eq!(ed448::ED448_KEY_SIZE, 57);
+        let mut rng = Yarrow::default();
+        let mut public = [0; 57];
+        let secret: Protected =
+            ed448::private_key(&mut rng).into();
+        ed448::public_key(&mut public, &secret)?;
+        Ok((secret, public))
+    }
+
+    fn ed448_derive_public(secret: &Protected) -> Result<[u8; 57]> {
+        debug_assert_eq!(ed448::ED448_KEY_SIZE, 57);
+        let mut public = [0; 57];
+        ed448::public_key(&mut public, secret)?;
+        Ok(public)
+    }
+
+    fn ed448_sign(secret: &Protected, public: &[u8; 57], digest: &[u8])
+                    -> Result<[u8; 114]> {
+        debug_assert_eq!(ed448::ED448_KEY_SIZE, 57);
+        debug_assert_eq!(ed448::ED448_SIGNATURE_SIZE, 114);
+        let mut sig = [0u8; 114];
+        ed448::sign(public, secret, digest, &mut sig)?;
+        Ok(sig)
+    }
+
+    fn ed448_verify(public: &[u8; 57], digest: &[u8], signature: &[u8; 114])
+                      -> Result<bool> {
+        debug_assert_eq!(ed448::ED448_KEY_SIZE, 57);
+        debug_assert_eq!(ed448::ED448_SIGNATURE_SIZE, 114);
+        Ok(ed448::verify(public, digest, signature)?)
     }
 
     fn dsa_generate_key(p_bits: usize)

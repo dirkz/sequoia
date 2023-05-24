@@ -29,10 +29,10 @@ impl Asymmetric for super::Backend {
         #[allow(deprecated)]
         match algo {
             X25519 | Ed25519 |
+            X448 | Ed448 |
             RSAEncryptSign | RSAEncrypt | RSASign => true,
             DSA => true,
             ECDH | ECDSA | EdDSA => true,
-            X448 | Ed448 |
             ElGamalEncrypt | ElGamalEncryptSign |
             Private(_) | Unknown(_)
                 => false,
@@ -78,6 +78,30 @@ impl Asymmetric for super::Backend {
         Ok(deriver.derive_to_vec()?.into())
     }
 
+    fn x448_generate_key() -> Result<(Protected, [u8; 56])> {
+        let pair = openssl::pkey::PKey::generate_x448()?;
+        Ok((pair.raw_private_key()?.into(),
+            pair.raw_public_key()?.as_slice().try_into()?))
+    }
+
+    fn x448_derive_public(secret: &Protected) -> Result<[u8; 56]> {
+        let key = PKey::private_key_from_raw_bytes(
+            secret, openssl::pkey::Id::X448)?;
+        Ok(key.raw_public_key()?.as_slice().try_into()?)
+    }
+
+    fn x448_shared_point(secret: &Protected, public: &[u8; 56])
+                           -> Result<Protected> {
+        let public = PKey::public_key_from_raw_bytes(
+            public, openssl::pkey::Id::X448)?;
+        let secret = PKey::private_key_from_raw_bytes(
+            secret, openssl::pkey::Id::X448)?;
+
+        let mut deriver = Deriver::new(&secret)?;
+        deriver.set_peer(&public)?;
+        Ok(deriver.derive_to_vec()?.into())
+    }
+
     fn ed25519_generate_key() -> Result<(Protected, [u8; 32])> {
         let pair = openssl::pkey::PKey::generate_ed25519()?;
         Ok((pair.raw_private_key()?.into(),
@@ -103,6 +127,35 @@ impl Asymmetric for super::Backend {
                       -> Result<bool> {
         let key = PKey::public_key_from_raw_bytes(
             public, openssl::pkey::Id::ED25519)?;
+        let mut verifier = Verifier::new_without_digest(&key)?;
+        Ok(verifier.verify_oneshot(signature, digest)?)
+    }
+
+    fn ed448_generate_key() -> Result<(Protected, [u8; 57])> {
+        let pair = openssl::pkey::PKey::generate_ed448()?;
+        Ok((pair.raw_private_key()?.into(),
+            pair.raw_public_key()?.as_slice().try_into()?))
+    }
+
+    fn ed448_derive_public(secret: &Protected) -> Result<[u8; 57]> {
+        let key = PKey::private_key_from_raw_bytes(
+            secret, openssl::pkey::Id::ED448)?;
+        Ok(key.raw_public_key()?.as_slice().try_into()?)
+    }
+
+    fn ed448_sign(secret: &Protected, _public: &[u8; 57], digest: &[u8])
+                    -> Result<[u8; 114]> {
+        let key = PKey::private_key_from_raw_bytes(
+            secret, openssl::pkey::Id::ED448)?;
+
+        let mut signer = OpenSslSigner::new_without_digest(&key)?;
+        Ok(signer.sign_oneshot_to_vec(digest)?.as_slice().try_into()?)
+    }
+
+    fn ed448_verify(public: &[u8; 57], digest: &[u8], signature: &[u8; 114])
+                      -> Result<bool> {
+        let key = PKey::public_key_from_raw_bytes(
+            public, openssl::pkey::Id::ED448)?;
         let mut verifier = Verifier::new_without_digest(&key)?;
         Ok(verifier.verify_oneshot(signature, digest)?)
     }
