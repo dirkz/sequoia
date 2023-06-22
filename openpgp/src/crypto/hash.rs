@@ -96,6 +96,18 @@ const ASN1_OID_SHA512: &[u8] = &[
     0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40,
 ];
 
+/// ASN.1 OID for SHA3-256
+const ASN1_OID_SHA3_256: &[u8] = &[
+    0x30, 0x31, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03,
+    0x04, 0x02, 0x08, 0x05, 0x00, 0x04, 0x20
+];
+
+/// ASN.1 OID for SHA3-512.
+const ASN1_OID_SHA3_512: &[u8] = &[
+    0x30, 0x51, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03,
+    0x04, 0x02, 0x0a, 0x05, 0x00, 0x04, 0x40
+];
+
 lazy_static::lazy_static! {
     /// List of hashes that the signer may produce.
     /// This list is ordered by the preference so that the most preferred
@@ -234,6 +246,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA256 => Ok(ASN1_OID_SHA256),
             HashAlgorithm::SHA384 => Ok(ASN1_OID_SHA384),
             HashAlgorithm::SHA512 => Ok(ASN1_OID_SHA512),
+            HashAlgorithm::SHA3_256 => Ok(ASN1_OID_SHA3_256),
+            HashAlgorithm::SHA3_512 => Ok(ASN1_OID_SHA3_512),
             HashAlgorithm::MD5 => Ok(ASN1_OID_MD5),
             HashAlgorithm::RipeMD => Ok(ASN1_OID_RIPEMD160),
             HashAlgorithm::Private(_) | HashAlgorithm::Unknown(_) =>

@@ -37,6 +37,8 @@ impl_digest_for!(sha2::Sha224, SHA224);
 impl_digest_for!(sha2::Sha256, SHA256);
 impl_digest_for!(sha2::Sha384, SHA384);
 impl_digest_for!(sha2::Sha512, SHA512);
+impl_digest_for!(sha3::Sha3_256, SHA3_256);
+impl_digest_for!(sha3::Sha3_512, SHA3_512);
 
 impl HashAlgorithm {
     /// Whether Sequoia supports this algorithm.
@@ -47,6 +49,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA256 => true,
             HashAlgorithm::SHA384 => true,
             HashAlgorithm::SHA512 => true,
+            HashAlgorithm::SHA3_256 => true,
+            HashAlgorithm::SHA3_512 => true,
             HashAlgorithm::RipeMD => true,
             HashAlgorithm::MD5 => true,
             HashAlgorithm::Private(_) => false,
@@ -73,6 +77,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA256 => Ok(Box::new(sha2::Sha256::new())),
             HashAlgorithm::SHA384 => Ok(Box::new(sha2::Sha384::new())),
             HashAlgorithm::SHA512 => Ok(Box::new(sha2::Sha512::new())),
+            HashAlgorithm::SHA3_256 => Ok(Box::new(sha3::Sha3_256::new())),
+            HashAlgorithm::SHA3_512 => Ok(Box::new(sha3::Sha3_512::new())),
             HashAlgorithm::RipeMD => Ok(Box::new(ripemd::Ripemd160::new())),
             HashAlgorithm::MD5 => Ok(Box::new(md5::Md5::new())),
             HashAlgorithm::Private(_) | HashAlgorithm::Unknown(_) =>

@@ -13,6 +13,8 @@
   We have also used the opportunity to clean up our API.  Most
   programs should only require minor adjustments.
 ** New functionality
+   - HashAlgorithm::SHA3_256
+   - HashAlgorithm::SHA3_512
 
 * Changes in 1.21.2
 ** Notable fixes

@@ -626,7 +626,7 @@ impl<'a> From<&'a StandardPolicy<'a>> for Option<&'a dyn Policy> {
 // Signatures that require a hash with collision Resistance and second
 // Pre-image Resistance.  See the documentation for HashAlgoSecurity
 // for more details.
-a_cutoff_list!(CollisionResistantHashCutoffList, HashAlgorithm, 12,
+a_cutoff_list!(CollisionResistantHashCutoffList, HashAlgorithm, 15,
                [
                    REJECT,                   // 0. Not assigned.
                    Some(Timestamp::Y1997M2), // 1. MD5
@@ -640,11 +640,14 @@ a_cutoff_list!(CollisionResistantHashCutoffList, HashAlgorithm, 12,
                    ACCEPT,                   // 9. SHA384
                    ACCEPT,                   // 10. SHA512
                    ACCEPT,                   // 11. SHA224
+                   ACCEPT,                   // 12. SHA3-256
+                   REJECT,                   // 13. Reserved.
+                   ACCEPT,                   // 14. SHA3-512
                ]);
 // Signatures that *only* require a hash with Second Pre-image
 // Resistance.  See the documentation for HashAlgoSecurity for more
 // details.
-a_cutoff_list!(SecondPreImageResistantHashCutoffList, HashAlgorithm, 12,
+a_cutoff_list!(SecondPreImageResistantHashCutoffList, HashAlgorithm, 15,
                [
                    REJECT,                   // 0. Not assigned.
                    Some(Timestamp::Y2004M2), // 1. MD5
@@ -658,6 +661,9 @@ a_cutoff_list!(SecondPreImageResistantHashCutoffList, HashAlgorithm, 12,
                    ACCEPT,                   // 9. SHA384
                    ACCEPT,                   // 10. SHA512
                    ACCEPT,                   // 11. SHA224
+                   ACCEPT,                   // 12. SHA3-256
+                   REJECT,                   // 13. Reserved.
+                   ACCEPT,                   // 14. SHA3-512
                ]);
 
 a_cutoff_list!(SubpacketTagCutoffList, SubpacketTag, 38,

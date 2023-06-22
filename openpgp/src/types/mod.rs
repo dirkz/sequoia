@@ -1338,6 +1338,10 @@ pub enum HashAlgorithm {
     SHA512,
     /// 224-bit version of SHA2
     SHA224,
+    /// 256-bit version of SHA3
+    SHA3_256,
+    /// 512-bit version of SHA3
+    SHA3_512,
     /// Private hash algorithm identifier.
     Private(u8),
     /// Unknown hash algorithm identifier.
@@ -1345,7 +1349,7 @@ pub enum HashAlgorithm {
 }
 assert_send_and_sync!(HashAlgorithm);
 
-const HASH_ALGORITHM_VARIANTS: [HashAlgorithm; 7] = [
+const HASH_ALGORITHM_VARIANTS: [HashAlgorithm; 9] = [
     HashAlgorithm::MD5,
     HashAlgorithm::SHA1,
     HashAlgorithm::RipeMD,
@@ -1353,6 +1357,8 @@ const HASH_ALGORITHM_VARIANTS: [HashAlgorithm; 7] = [
     HashAlgorithm::SHA384,
     HashAlgorithm::SHA512,
     HashAlgorithm::SHA224,
+    HashAlgorithm::SHA3_256,
+    HashAlgorithm::SHA3_512,
 ];
 
 impl Default for HashAlgorithm {
@@ -1373,6 +1379,8 @@ impl From<u8> for HashAlgorithm {
             9 => HashAlgorithm::SHA384,
             10 => HashAlgorithm::SHA512,
             11 => HashAlgorithm::SHA224,
+            12 => HashAlgorithm::SHA3_256,
+            14 => HashAlgorithm::SHA3_512,
             100..=110 => HashAlgorithm::Private(u),
             u => HashAlgorithm::Unknown(u),
         }
@@ -1389,6 +1397,8 @@ impl From<HashAlgorithm> for u8 {
             HashAlgorithm::SHA384 => 9,
             HashAlgorithm::SHA512 => 10,
             HashAlgorithm::SHA224 => 11,
+            HashAlgorithm::SHA3_256 => 12,
+            HashAlgorithm::SHA3_512 => 14,
             HashAlgorithm::Private(u) => u,
             HashAlgorithm::Unknown(u) => u,
         }
@@ -1413,6 +1423,10 @@ impl FromStr for HashAlgorithm {
             Ok(HashAlgorithm::SHA512)
         } else if s.eq_ignore_ascii_case("SHA224") {
             Ok(HashAlgorithm::SHA224)
+        } else if s.eq_ignore_ascii_case("SHA3-256") {
+            Ok(HashAlgorithm::SHA3_256)
+        } else if s.eq_ignore_ascii_case("SHA3-512") {
+            Ok(HashAlgorithm::SHA3_512)
         } else {
             Err(())
         }
@@ -1429,6 +1443,8 @@ impl fmt::Display for HashAlgorithm {
             HashAlgorithm::SHA384 => f.write_str("SHA384"),
             HashAlgorithm::SHA512 => f.write_str("SHA512"),
             HashAlgorithm::SHA224 => f.write_str("SHA224"),
+            HashAlgorithm::SHA3_256 => f.write_str("SHA3-256"),
+            HashAlgorithm::SHA3_512 => f.write_str("SHA3-512"),
             HashAlgorithm::Private(u) =>
                 f.write_fmt(format_args!("Private/Experimental hash algorithm {}", u)),
             HashAlgorithm::Unknown(u) =>
@@ -1465,6 +1481,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA384 => Ok("SHA384"),
             HashAlgorithm::SHA512 => Ok("SHA512"),
             HashAlgorithm::SHA224 => Ok("SHA224"),
+            HashAlgorithm::SHA3_256 => Ok("SHA3-256"),
+            HashAlgorithm::SHA3_512 => Ok("SHA3-512"),
             HashAlgorithm::Private(_) =>
                 Err(Error::UnsupportedHashAlgorithm(*self).into()),
             HashAlgorithm::Unknown(_) =>
