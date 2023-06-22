@@ -48,6 +48,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA256 => true,
             HashAlgorithm::SHA384 => true,
             HashAlgorithm::SHA512 => true,
+            HashAlgorithm::SHA3_256 => true,
+            HashAlgorithm::SHA3_512 => true,
             HashAlgorithm::RipeMD => true,
             HashAlgorithm::MD5 => true,
             HashAlgorithm::Private(_) => false,
@@ -82,6 +84,8 @@ impl HashAlgorithm {
             HashAlgorithm::SHA256 => Ok("SHA-256"),
             HashAlgorithm::SHA384 => Ok("SHA-384"),
             HashAlgorithm::SHA512 => Ok("SHA-512"),
+            HashAlgorithm::SHA3_256 => Ok("SHA-3(256)"),
+            HashAlgorithm::SHA3_512 => Ok("SHA-3(512)"),
             HashAlgorithm::MD5 => Ok("MD5"),
             HashAlgorithm::RipeMD => Ok("RIPEMD-160"),
             HashAlgorithm::Private(_) | HashAlgorithm::Unknown(_) =>

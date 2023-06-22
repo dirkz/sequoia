@@ -73,6 +73,8 @@ fn get_md(algo: HashAlgorithm) -> Option<MessageDigest> {
         SHA384 => Nid::SHA384,
         SHA512 => Nid::SHA512,
         SHA224 => Nid::SHA224,
+        SHA3_256 => Nid::SHA3_256,
+        SHA3_512 => Nid::SHA3_512,
         HashAlgorithm::Private(_) |
         HashAlgorithm::Unknown(_) => return None,
     };
