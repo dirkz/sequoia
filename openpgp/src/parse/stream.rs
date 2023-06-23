@@ -2791,16 +2791,20 @@ impl<'a, H: VerificationHelper + DecryptionHelper> Decryptor<'a, H> {
                         // encryption.  Furthermore, no other OpenPGP
                         // implementation seems to support this kind
                         // of wildcard signatures.
-                        //
-                        // If there are no issuers, this iterator will
-                        // not yield any keys, hence this verification
-                        // will fail with the default error,
-                        // `VerificationError::MissingKey`.
-                        for ka in self.certs.iter()
-                            .flat_map(|cert| {
-                                cert.keys().key_handles(issuers.iter())
-                            })
+                        let no_issuers = issuers.is_empty();
+
+                        for ka in self.certs.iter().flat_map(
+                            |c| c.keys().key_handles2(issuers.clone()))
                         {
+                            if no_issuers {
+                                // Slightly awkward control flow
+                                // change.  Below this loop, we still
+                                // have to add this signature to the
+                                // results with the default error,
+                                // `VerificationError::MissingKey`.
+                                break;
+                            }
+
                             let cert = ka.cert();
                             let fingerprint = ka.fingerprint();
                             let ka = match ka.with_policy(self.policy, sig_time) {
