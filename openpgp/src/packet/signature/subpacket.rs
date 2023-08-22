@@ -302,12 +302,13 @@ pub enum SubpacketTag {
     ///
     ///  [Section 5.2.3.28 of RFC 4880bis]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09.html#section-5.2.3.28
     IssuerFingerprint,
-    /// The AEAD algorithms that the certificate holder prefers (proposed).
+
+    /// The AEAD algorithms that the certificate holder prefers (deprecated).
     ///
-    /// See [Section 5.2.3.8 of RFC 4880bis] for details.
+    /// See [Section 5.2.3.8 of draft-ietf-openpgp-rfc4880bis-09] for details.
     ///
-    ///  [Section 5.2.3.8 of RFC 4880bis]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09.html#section-5.2.3.8
-    #[deprecated]
+    ///  [Section 5.2.3.8 of draft-ietf-openpgp-rfc4880bis-09]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09.html#section-5.2.3.8
+    #[deprecated(note = "Use PreferredAEADCiphersuites instead")]
     PreferredAEADAlgorithms,
     /// Who the signed message was intended for (proposed).
     ///
@@ -1696,12 +1697,13 @@ pub enum SubpacketValue {
     ///
     ///  [Section 5.2.3.28 of RFC 4880bis]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09.html#section-5.2.3.28
     IssuerFingerprint(Fingerprint),
-    /// The AEAD algorithms that the certificate holder prefers (proposed).
+
+    /// The AEAD algorithms that the certificate holder prefers (deprecated).
     ///
-    /// See [Section 5.2.3.8 of RFC 4880bis] for details.
+    /// See [Section 5.2.3.8 of draft-ietf-openpgp-rfc4880bis-09] for details.
     ///
-    ///  [Section 5.2.3.8 of RFC 4880bis]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09.html#section-5.2.3.8
-    #[deprecated]
+    ///  [Section 5.2.3.8 of draft-ietf-openpgp-rfc4880bis-09]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09.html#section-5.2.3.8
+    #[deprecated(note = "Use PreferredAEADCiphersuites instead")]
     PreferredAEADAlgorithms(Vec<AEADAlgorithm>),
     /// Who the signed message was intended for (proposed).
     ///
@@ -1749,6 +1751,7 @@ impl ArbitraryBounded for SubpacketValue {
         use self::SubpacketValue::*;
         use crate::arbitrary_helper::gen_arbitrary_from_range;
 
+        #[allow(deprecated)]
         loop {
             #[allow(deprecated)]
             break match gen_arbitrary_from_range(0..27, g) {
@@ -3370,6 +3373,7 @@ impl SubpacketAreas {
     }
 
     /// Returns the value of the Preferred AEAD Algorithms subpacket.
+    #[deprecated(note = "Use preferred_aead_ciphersuites instead")]
     pub fn preferred_aead_algorithms(&self)
                                      -> Option<&[AEADAlgorithm]> {
         // array of one-octet values
@@ -7042,6 +7046,7 @@ impl signature::SignatureBuilder {
     }
 
     /// Sets the Preferred AEAD Algorithms subpacket.
+    #[deprecated(note = "Use set_preferred_aead_ciphersuites instead")]
     pub fn set_preferred_aead_algorithms(mut self,
                                          preferences: Vec<AEADAlgorithm>)
         -> Result<Self>
