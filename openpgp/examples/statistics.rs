@@ -69,6 +69,8 @@ fn main() -> openpgp::Result<()> {
         Default::default();
     let mut p_comp: HashMap<Vec<CompressionAlgorithm>, usize> =
         Default::default();
+    let mut p_aead_ciphersuites: HashMap<Vec<(SymmetricAlgorithm, AEADAlgorithm)>, usize> =
+        Default::default();
     let mut p_aead: HashMap<Vec<AEADAlgorithm>, usize> =
         Default::default();
 
@@ -209,6 +211,13 @@ fn main() -> openpgp::Result<()> {
                                         *count += 1;
                                     } else {
                                         p_comp.insert(a.clone(), 1);
+                                    },
+                                SubpacketValue::PreferredAEADCiphersuites(a)
+                                    =>
+                                    if let Some(count) = p_aead_ciphersuites.get_mut(a) {
+                                        *count += 1;
+                                    } else {
+                                        p_aead_ciphersuites.insert(a.clone(), 1);
                                     },
                                 SubpacketValue::PreferredAEADAlgorithms(a)
                                     =>
@@ -523,6 +532,20 @@ fn main() -> openpgp::Result<()> {
         }).collect::<Vec<_>>();
         preferences.sort_unstable_by(|a, b| b.1.cmp(a.1));
         for (a, n) in preferences {
+            let a = format!("{:?}", a);
+            println!("{:>70} {:>9}", &a[1..a.len()-1], n);
+        }
+    }
+
+    if !p_aead_ciphersuites.is_empty() {
+        println!();
+        println!("# PreferredAEADCiphersuites statistics");
+        println!();
+        println!("{:>70} {:>9}", "", "count",);
+        println!("----------------------------------------\
+                  ----------------------------------------");
+
+        for (a, n) in p_aead_ciphersuites.iter() {
             let a = format!("{:?}", a);
             println!("{:>70} {:>9}", &a[1..a.len()-1], n);
         }

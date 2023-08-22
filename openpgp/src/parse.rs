@@ -1861,6 +1861,21 @@ impl Subpacket {
                         bytes.chunks(digest_size).map(Into::into).collect())
                 }
             },
+
+            SubpacketTag::PreferredAEADCiphersuites => {
+                if len % 2 != 0 {
+                    return Err(Error::BadSignature(
+                        "Wrong number of bytes in preferred AEAD \
+                         Ciphersuites subpacket"
+                            .into()).into());
+                }
+
+                SubpacketValue::PreferredAEADCiphersuites(
+                    php.parse_bytes("pref aead ciphersuites", len)?
+                        .chunks(2).map(|o| (o[0].into(),
+                                            o[1].into())).collect())
+            },
+
             SubpacketTag::Reserved(_)
                 | SubpacketTag::PlaceholderForBackwardCompatibility
                 | SubpacketTag::Private(_)
