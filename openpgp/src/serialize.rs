@@ -1529,6 +1529,12 @@ impl Marshal for SubpacketValue {
                     o.write_all(digest)?;
                 }
             },
+
+            PreferredAEADCiphersuites(p) =>
+                for (symm, aead) in p {
+                    o.write_all(&[(*symm).into(), (*aead).into()])?;
+                },
+
             Unknown { body, .. } =>
                 o.write_all(body)?,
         }
@@ -1571,6 +1577,7 @@ impl MarshalInto for SubpacketValue {
                 1 + (fp as &dyn MarshalInto).serialized_len(),
             AttestedCertifications(digests) =>
                 digests.iter().map(|d| d.len()).sum(),
+            PreferredAEADCiphersuites(c) => c.len() * 2,
             Unknown { body, .. } => body.len(),
         }
     }
