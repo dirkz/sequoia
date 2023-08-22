@@ -8,10 +8,10 @@ use crate::types::Bitfield;
 /// Describes the features supported by an OpenPGP implementation.
 ///
 /// The feature flags are defined in [Section 5.2.3.24 of RFC 4880],
-/// and [Section 5.2.3.25 of RFC 4880bis].
+/// and [Section 5.2.3.32 of draft-ietf-openpgp-crypto-refresh].
 ///
 /// [Section 5.2.3.24 of RFC 4880]: https://tools.ietf.org/html/rfc4880#section-5.2.3.24
-/// [Section 5.2.3.25 of RFC 4880bis]: https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-09#section-5.2.3.25
+/// [Section 5.2.3.32 of draft-ietf-openpgp-crypto-refresh]: https://www.ietf.org/archive/id/draft-ietf-openpgp-crypto-refresh-10.html#features-subpacket
 ///
 /// The feature flags are set by the user's OpenPGP implementation to
 /// signal to any senders what features the implementation supports.
@@ -65,7 +65,11 @@ impl fmt::Debug for Features {
             f.write_str("SEIPDv1")?;
             need_comma = true;
         }
-
+        if self.supports_seipdv2() {
+            if need_comma { f.write_str(", ")?; }
+            f.write_str("SEIPDv2")?;
+            need_comma = true;
+        }
         #[allow(deprecated)]
         if self.supports_aead() {
             if need_comma { f.write_str(", ")?; }
@@ -77,6 +81,7 @@ impl fmt::Debug for Features {
         for i in self.0.iter_set() {
             match i {
                 FEATURE_FLAG_SEIPDV1 => (),
+                FEATURE_FLAG_SEIPDV2 => (),
                 FEATURE_FLAG_AEAD => (),
                 i => {
                     if need_comma { f.write_str(", ")?; }
@@ -117,6 +122,7 @@ impl Features {
 
         Self::new(&v[..])
             .set_seipdv1()
+            .set_seipdv2()
     }
 
     /// Returns a reference to the underlying [`Bitfield`].
@@ -317,6 +323,66 @@ impl Features {
         self.clear_seipdv1()
     }
 
+    /// Returns whether the SEIPDv2 feature flag is set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sequoia_openpgp as openpgp;
+    /// # use openpgp::Result;
+    /// use openpgp::types::Features;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let f = Features::empty();
+    ///
+    /// assert!(! f.supports_seipdv2());
+    /// # Ok(()) }
+    /// ```
+    pub fn supports_seipdv2(&self) -> bool {
+        self.get(FEATURE_FLAG_SEIPDV2)
+    }
+
+    /// Sets the SEIPDv2 feature flag.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sequoia_openpgp as openpgp;
+    /// # use openpgp::Result;
+    /// use openpgp::types::Features;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let f = Features::empty().set_seipdv2();
+    ///
+    /// assert!(f.supports_seipdv2());
+    /// # assert!(f.get(3));
+    /// # Ok(()) }
+    /// ```
+    pub fn set_seipdv2(self) -> Self {
+        self.set(FEATURE_FLAG_SEIPDV2)
+    }
+
+    /// Clears the SEIPDv2 feature flag.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sequoia_openpgp as openpgp;
+    /// # use openpgp::Result;
+    /// use openpgp::types::Features;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let f = Features::new(&[0x8]);
+    /// assert!(f.supports_seipdv2());
+    ///
+    /// let f = f.clear_seipdv2();
+    /// assert!(! f.supports_seipdv2());
+    /// # Ok(()) }
+    /// ```
+    pub fn clear_seipdv2(self) -> Self {
+        self.clear(FEATURE_FLAG_SEIPDV2)
+    }
+
     /// Returns whether the AEAD feature flag is set.
     ///
     /// # Examples
@@ -388,6 +454,10 @@ const FEATURE_FLAG_SEIPDV1: usize = 0;
 /// AEAD Encrypted Data Packet (packet 20) and version 5 Symmetric-Key
 /// Encrypted Session Key Packets (packet 3).
 const FEATURE_FLAG_AEAD: usize = 1;
+
+/// Symmetrically Encrypted and Integrity Protected Data packet
+/// version 2.
+const FEATURE_FLAG_SEIPDV2: usize = 3;
 
 #[cfg(test)]
 impl Arbitrary for Features {
@@ -480,6 +550,11 @@ mod tests {
     fn known() {
         let a = Features::empty().set_seipdv1();
         let b = Features::new(&[ 0x1 ]);
+        assert_eq!(a, b);
+        assert!(a.normalized_eq(&b));
+
+        let a = Features::empty().set_seipdv2();
+        let b = Features::new(&[ 0x8 ]);
         assert_eq!(a, b);
         assert!(a.normalized_eq(&b));
 

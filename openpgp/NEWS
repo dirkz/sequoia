@@ -15,6 +15,9 @@
 ** New functionality
    - HashAlgorithm::SHA3_256
    - HashAlgorithm::SHA3_512
+   - types::Features::clear_seipdv2
+   - types::Features::set_seipdv2
+   - types::Features::supports_seipdv2
 
 * Changes in 1.21.2
 ** Notable fixes

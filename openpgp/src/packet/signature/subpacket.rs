@@ -7383,8 +7383,7 @@ fn accessors() {
         sig.clone().sign_hash(&mut keypair, hash.clone()).unwrap();
     assert_eq!(sig_.features().unwrap(), feats);
 
-    #[allow(deprecated)]
-    let feats = Features::empty().set_aead();
+    let feats = Features::empty().set_seipdv2();
     sig = sig.set_features(feats.clone()).unwrap();
     let sig_ =
         sig.clone().sign_hash(&mut keypair, hash.clone()).unwrap();
