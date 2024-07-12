@@ -29,6 +29,9 @@ use crate::{
     },
 };
 
+/// Controls tracing in this module.
+const TRACE: bool = false;
+
 /// Lazily verified signatures, similar to a `Vec<Signature>`.
 ///
 /// We use two distinct vectors to store the signatures and their
@@ -269,6 +272,9 @@ impl LazySignatures {
                       subkey: Option<&Key<key::PublicParts, key::SubordinateRole>>)
                       -> Result<SigState>
     {
+        tracer!(TRACE, format!("{}: LazySignatures({:?})::verify_sig",
+                               self.primary_key.keyid(),
+                               self as *const _));
         self.assert_invariant();
         if ! i < self.sigs.len() {
             return Err(Error::InvalidArgument(format!(
@@ -280,6 +286,8 @@ impl LazySignatures {
             None => unreachable!("LazySignatures invariant violated"),
             Some(SigState::Unverified) => {
                 let s = &self.sigs[i];
+                t!("evaluating sig {} ({}, {:02X}{:02X})", i, s.typ(),
+                   s.digest_prefix()[0], s.digest_prefix()[1]);
                 let mut r = s.verify_signature(&self.primary_key);
 
                 if r.is_ok() && subkey.is_some() &&
