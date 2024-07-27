@@ -122,7 +122,7 @@ pub struct ComponentBundle<C> {
 
     /// If set, is equal to `component`, and provides context to
     /// verify primary key binding signatures.
-    backsig_signer: Option<Key<key::PublicParts, key::SubordinateRole>>,
+    pub(super) backsig_signer: Option<Key<key::PublicParts, key::SubordinateRole>>,
 
     // Third-party certifications.  (In general, this will only be by
     // designated revokers.)
