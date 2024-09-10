@@ -1528,7 +1528,9 @@ impl CertBuilder<'_> {
             Packet::SecretKey({
                 let mut primary = primary.clone();
                 if let Some(ref password) = self.password {
-                    primary.secret_mut().encrypt_in_place(password)?;
+                    let (k, mut secret) = primary.take_secret();
+                    secret.encrypt_in_place(&k, password)?;
+                    primary = k.add_secret(secret).0;
                 }
                 primary
             }),
@@ -1650,7 +1652,9 @@ impl CertBuilder<'_> {
             let signature = subkey.bind(&mut signer, &cert, builder)?;
 
             if let Some(ref password) = self.password {
-                subkey.secret_mut().encrypt_in_place(password)?;
+                let (k, mut secret) = subkey.take_secret();
+                secret.encrypt_in_place(&k, password)?;
+                subkey = k.add_secret(secret).0;
             }
             acc.push(subkey.into());
             acc.push(signature.into());
