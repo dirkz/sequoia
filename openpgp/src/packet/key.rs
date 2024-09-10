@@ -2168,25 +2168,99 @@ impl Encrypted {
         R: KeyRole,
     {
         use std::io::{Cursor, Read};
-        use crate::crypto::symmetric::Decryptor;
+        use crate::crypto;
 
         let derived_key = self.s2k.derive_key(password, self.algo.key_size()?)?;
         let ciphertext = self.ciphertext()?;
-        let cur = Cursor::new(ciphertext);
-        let mut dec = Decryptor::new(self.algo, &derived_key, cur)?;
 
-        // Consume the first block.
-        let block_size = self.algo.block_size()?;
-        let mut trash = mem::Protected::new(block_size);
-        dec.read_exact(&mut trash)?;
+        if let Some((aead, iv)) = &self.aead {
+            let schedule =
+                Key253Schedule::new(Tag::SecretKey, // XXXXXXXXXX
+ // FUCK: I think we should track the key role at runtime in Key4,
+ // change it in heavy conversions but not in cheap ones.
+                                    key.parts_as_public(), derived_key,
+                                    self.algo, *aead, iv)?;
+            let mut dec = schedule.decryptor()?;
 
-        // Read the secret key.
-        let mut secret = mem::Protected::new(ciphertext.len() - block_size);
-        dec.read_exact(&mut secret)?;
+            // Read the secret key.
+            let mut secret = mem::Protected::new(
+                ciphertext.len().saturating_sub(aead.digest_size()?));
+            dec.decrypt_verify(&mut secret, ciphertext)?;
 
-        mpi::SecretKeyMaterial::from_bytes_with_checksum(
-            key.pk_algo(), &secret, self.checksum.unwrap_or_default())
-            .map(|m| m.into())
+            mpi::SecretKeyMaterial::from_bytes(
+                key.pk_algo(), &secret).map(|m| m.into())
+        } else {
+            let cur = Cursor::new(ciphertext);
+            let mut dec =
+                crypto::symmetric::Decryptor::new(self.algo, &derived_key, cur)?;
+
+            // Consume the first block.
+            let block_size = self.algo.block_size()?;
+            let mut trash = mem::Protected::new(block_size);
+            dec.read_exact(&mut trash)?;
+
+            // Read the secret key.
+            let mut secret = mem::Protected::new(ciphertext.len() - block_size);
+            dec.read_exact(&mut secret)?;
+
+            mpi::SecretKeyMaterial::from_bytes_with_checksum(
+                key.pk_algo(), &secret, self.checksum.unwrap_or_default())
+                .map(|m| m.into())
+        }
+    }
+}
+
+pub(crate) struct Key253Schedule<'a> {
+    symm: SymmetricAlgorithm,
+    aead: AEADAlgorithm,
+    nonce: &'a [u8],
+    kek: SessionKey,
+    ad: Vec<u8>
+}
+
+impl<'a> Key253Schedule<'a> {
+    fn new<R>(tag: Tag,
+              key: &Key<PublicParts, R>,
+              derived_key: SessionKey,
+              symm: SymmetricAlgorithm,
+              aead: AEADAlgorithm,
+              nonce: &'a [u8])
+              -> Result<Self>
+    where
+        R: KeyRole,
+    {
+        use crate::serialize::{Marshal, MarshalInto};
+        use crate::crypto::backend::{Backend, interface::Kdf};
+
+        let info = [
+            0b1100_0000 | u8::from(tag), // Canonicalized packet type.
+            key.version(),
+            symm.into(),
+            aead.into(),
+        ];
+        let mut kek = vec![0; symm.key_size()?].into();
+        dbg!(crate::fmt::hex::encode(&derived_key));
+        Backend::hkdf_sha256(&derived_key, None, &info, &mut kek)?;
+        dbg!(crate::fmt::hex::encode(&kek));
+
+        let mut ad = Vec::with_capacity(key.serialized_len());
+        ad.push(0b1100_0000 | u8::from(tag)); // Canonicalized packet type.
+        key.serialize(&mut ad)?;
+        dbg!(crate::fmt::hex::encode(&ad));
+
+        Ok(Self {
+            symm,
+            aead,
+            nonce,
+            kek,
+            ad,
+        })
+    }
+
+    fn decryptor(&self) -> Result<Box<dyn crypto::aead::Aead>> {
+        use crypto::aead::CipherOp;
+        self.aead.context(self.symm, &self.kek, &self.ad, self.nonce,
+                          CipherOp::Decrypt)
     }
 }
 
