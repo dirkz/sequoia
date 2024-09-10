@@ -7553,6 +7553,8 @@ Pu1xwz57O4zo1VYf6TqHJzVC3OMvMUM2hhdecMUe5x6GorNaj6g=
         assert_eq!(cert.userids().count(), 0);
         let vcert = cert.with_policy(p, t)?;
         assert_eq!(vcert.keys().count(), 2);
+        assert_eq!(vcert.keys().encrypted_secret().count(), 0);
+        assert_eq!(vcert.keys().unencrypted_secret().count(), 0);
         assert_eq!(vcert.keys().for_signing().count(), 1);
         assert_eq!(vcert.keys().for_transport_encryption().count(), 1);
 
@@ -7561,8 +7563,21 @@ Pu1xwz57O4zo1VYf6TqHJzVC3OMvMUM2hhdecMUe5x6GorNaj6g=
         assert_eq!(cert.userids().count(), 0);
         let vcert = cert.with_policy(p, t)?;
         assert_eq!(vcert.keys().count(), 2);
+        assert_eq!(vcert.keys().encrypted_secret().count(), 0);
+        assert_eq!(vcert.keys().unencrypted_secret().count(), 2);
         assert_eq!(vcert.keys().for_signing().count(), 1);
         assert_eq!(vcert.keys().for_transport_encryption().count(), 1);
+
+        let cert = Cert::from_bytes(
+            crate::tests::file("crypto-refresh/v6-minimal-secret-locked.key")).unwrap();
+        assert_eq!(cert.userids().count(), 0);
+        let vcert = cert.with_policy(p, t)?;
+        assert_eq!(vcert.keys().count(), 2);
+        assert_eq!(vcert.keys().encrypted_secret().count(), 2);
+        assert_eq!(vcert.keys().unencrypted_secret().count(), 0);
+        assert_eq!(vcert.keys().for_signing().count(), 1);
+        assert_eq!(vcert.keys().for_transport_encryption().count(), 1);
+
         Ok(())
     }
 }
