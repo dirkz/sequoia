@@ -1934,6 +1934,27 @@ impl SecretKeyMaterial {
         Ok(self)
     }
 
+    /// Encrypts the secret key material using `password` with the
+    /// given parameters.
+    ///
+    /// This returns an error if the secret key material is encrypted.
+    ///
+    /// See [`Unencrypted::encrypt_with`] for details.
+    pub fn encrypt_with<P, R>(mut self,
+                              key: &Key<P, R>,
+                              s2k: S2K,
+                              symm: SymmetricAlgorithm,
+                              aead: Option<AEADAlgorithm>,
+                              password: &Password)
+                              -> Result<Self>
+    where
+        P: KeyParts,
+        R: KeyRole,
+    {
+        self.encrypt_in_place_with(key, s2k, symm, aead, password)?;
+        Ok(self)
+    }
+
     /// Encrypts the secret key material using `password`.
     ///
     /// This returns an error if the secret key material is encrypted.
@@ -1951,6 +1972,35 @@ impl SecretKeyMaterial {
             SecretKeyMaterial::Unencrypted(ref u) => {
                 *self = SecretKeyMaterial::Encrypted(
                     u.encrypt(key, password)?);
+                Ok(())
+            }
+            SecretKeyMaterial::Encrypted(_) =>
+                Err(Error::InvalidArgument(
+                    "secret key is encrypted".into()).into()),
+        }
+    }
+
+    /// Encrypts the secret key material using `password` and the
+    /// given parameters.
+    ///
+    /// This returns an error if the secret key material is encrypted.
+    ///
+    /// See [`Unencrypted::encrypt`] for details.
+    pub fn encrypt_in_place_with<P, R>(&mut self,
+                                       key: &Key<P, R>,
+                                       s2k: S2K,
+                                       symm: SymmetricAlgorithm,
+                                       aead: Option<AEADAlgorithm>,
+                                       password: &Password)
+                                       -> Result<()>
+    where
+        P: KeyParts,
+        R: KeyRole,
+    {
+        match self {
+            SecretKeyMaterial::Unencrypted(ref u) => {
+                *self = SecretKeyMaterial::Encrypted(
+                    u.encrypt_with(key, s2k, symm, aead, password)?);
                 Ok(())
             }
             SecretKeyMaterial::Encrypted(_) =>
@@ -2024,15 +2074,32 @@ impl Unencrypted {
 
     /// Encrypts the secret key material using `password`.
     ///
-    /// This encrypts the secret key material using an [AES 256] key
-    /// derived from the `password` using the default [`S2K`] scheme.
-    ///
-    /// [AES 256]: crate::types::SymmetricAlgorithm::AES256
-    /// [`S2K`]: super::super::crypto::S2K
+    /// This encrypts the secret key material using AES-128/OCB and a
+    /// key derived from the `password` using the default [`S2K`]
+    /// scheme.
     pub fn encrypt<P, R>(&self,
-                         _key: &Key<P, R>,
+                         key: &Key<P, R>,
                          password: &Password)
                          -> Result<Encrypted>
+    where
+        P: KeyParts,
+        R: KeyRole,
+    {
+        self.encrypt_with(key, S2K::default(),
+                          SymmetricAlgorithm::AES128,
+                          Some(AEADAlgorithm::OCB),
+                          password)
+    }
+
+    /// Encrypts the secret key material using `password` and the
+    /// given parameters.
+    pub fn encrypt_with<P, R>(&self,
+                              key: &Key<P, R>,
+                              s2k: S2K,
+                              symm: SymmetricAlgorithm,
+                              aead: Option<AEADAlgorithm>,
+                              password: &Password)
+                              -> Result<Encrypted>
     where
         P: KeyParts,
         R: KeyRole,
@@ -2040,24 +2107,52 @@ impl Unencrypted {
         use std::io::Write;
         use crate::crypto::symmetric::Encryptor;
 
-        let s2k = S2K::default();
-        let algo = SymmetricAlgorithm::AES256;
-        let key = s2k.derive_key(password, algo.key_size()?)?;
+        let derived_key = s2k.derive_key(password, symm.key_size()?)?;
 
-        // Ciphertext is preceded by a random block.
-        let mut trash = vec![0u8; algo.block_size()?];
-        crypto::random(&mut trash);
+        if let Some(aead) = aead {
+            use crate::serialize::MarshalInto;
 
-        let checksum = Default::default();
-        let mut esk = Vec::new();
-        {
-            let mut encryptor = Encryptor::new(algo, &key, &mut esk)?;
+            let mut iv = vec![0; aead.nonce_size()?];
+            crypto::random(&mut iv);
+
+            let schedule = Key253Schedule::new(
+                match key.role {
+                    KeyRoleRT::Primary => Tag::SecretKey,
+                    KeyRoleRT::Subordinate => Tag::SecretSubkey,
+                    KeyRoleRT::Unspecified =>
+                        return Err(Error::InvalidOperation(
+                            "cannot encrypt key with unspecified role".into()).into()),
+                },
+                key.parts_as_public(), derived_key, symm, aead, &iv)?;
+            let mut enc = schedule.encryptor()?;
+
+            // Encrypt the secret key.
+            let esk = self.map(|mpis| -> Result<Vec<u8>> {
+                let mut esk =
+                    vec![0; mpis.serialized_len() + aead.digest_size()?];
+                let secret = mpis.to_vec()?;
+                enc.encrypt_seal(&mut esk, &secret)?;
+                Ok(esk)
+            })?;
+
+            Ok(Encrypted::new_aead(s2k, symm, aead, iv.into_boxed_slice(),
+                                   esk.into_boxed_slice()))
+        } else {
+            // Ciphertext is preceded by a random block.
+            let mut trash = vec![0u8; symm.block_size()?];
+            crypto::random(&mut trash);
+
+            let checksum = Default::default();
+            let mut esk = Vec::new();
+            let mut encryptor = Encryptor::new(symm, &derived_key, &mut esk)?;
             encryptor.write_all(&trash)?;
             self.map(|mpis| mpis.serialize_with_checksum(&mut encryptor,
                                                          checksum))?;
-        }
+            drop(encryptor);
 
-        Ok(Encrypted::new(s2k, algo, Some(checksum), esk.into_boxed_slice()))
+            Ok(Encrypted::new(s2k, symm, Some(checksum),
+                              esk.into_boxed_slice()))
+        }
     }
 }
 
@@ -2095,6 +2190,7 @@ assert_send_and_sync!(Encrypted);
 impl PartialEq for Encrypted {
     fn eq(&self, other: &Encrypted) -> bool {
         self.algo == other.algo
+            && self.aead == other.aead
             && self.checksum == other.checksum
             // Treat S2K and ciphertext as opaque blob.
             && {
@@ -2225,25 +2321,105 @@ impl Encrypted {
         R: KeyRole,
     {
         use std::io::{Cursor, Read};
-        use crate::crypto::symmetric::Decryptor;
+        use crate::crypto;
 
         let derived_key = self.s2k.derive_key(password, self.algo.key_size()?)?;
         let ciphertext = self.ciphertext()?;
-        let cur = Cursor::new(ciphertext);
-        let mut dec = Decryptor::new(self.algo, &derived_key, cur)?;
 
-        // Consume the first block.
-        let block_size = self.algo.block_size()?;
-        let mut trash = mem::Protected::new(block_size);
-        dec.read_exact(&mut trash)?;
+        if let Some((aead, iv)) = &self.aead {
+            let schedule = Key253Schedule::new(
+                match key.role {
+                    KeyRoleRT::Primary => Tag::SecretKey,
+                    KeyRoleRT::Subordinate => Tag::SecretSubkey,
+                    KeyRoleRT::Unspecified =>
+                        return Err(Error::InvalidOperation(
+                            "cannot decrypt key with unspecified role".into()).into()),
+                },
+                key.parts_as_public(), derived_key, self.algo, *aead, iv)?;
+            let mut dec = schedule.decryptor()?;
 
-        // Read the secret key.
-        let mut secret = mem::Protected::new(ciphertext.len() - block_size);
-        dec.read_exact(&mut secret)?;
+            // Read the secret key.
+            let mut secret = mem::Protected::new(
+                ciphertext.len().saturating_sub(aead.digest_size()?));
+            dec.decrypt_verify(&mut secret, ciphertext)?;
 
-        mpi::SecretKeyMaterial::from_bytes_with_checksum(
-            key.pk_algo(), &secret, self.checksum.unwrap_or_default())
-            .map(|m| m.into())
+            mpi::SecretKeyMaterial::from_bytes(
+                key.pk_algo(), &secret).map(|m| m.into())
+        } else {
+            let cur = Cursor::new(ciphertext);
+            let mut dec =
+                crypto::symmetric::Decryptor::new(self.algo, &derived_key, cur)?;
+
+            // Consume the first block.
+            let block_size = self.algo.block_size()?;
+            let mut trash = mem::Protected::new(block_size);
+            dec.read_exact(&mut trash)?;
+
+            // Read the secret key.
+            let mut secret = mem::Protected::new(ciphertext.len() - block_size);
+            dec.read_exact(&mut secret)?;
+
+            mpi::SecretKeyMaterial::from_bytes_with_checksum(
+                key.pk_algo(), &secret, self.checksum.unwrap_or_default())
+                .map(|m| m.into())
+        }
+    }
+}
+
+pub(crate) struct Key253Schedule<'a> {
+    symm: SymmetricAlgorithm,
+    aead: AEADAlgorithm,
+    nonce: &'a [u8],
+    kek: SessionKey,
+    ad: Vec<u8>
+}
+
+impl<'a> Key253Schedule<'a> {
+    fn new<R>(tag: Tag,
+              key: &Key<PublicParts, R>,
+              derived_key: SessionKey,
+              symm: SymmetricAlgorithm,
+              aead: AEADAlgorithm,
+              nonce: &'a [u8])
+              -> Result<Self>
+    where
+        R: KeyRole,
+    {
+        use crate::serialize::{Marshal, MarshalInto};
+        use crate::crypto::backend::{Backend, interface::Kdf};
+
+        let info = [
+            0b1100_0000 | u8::from(tag), // Canonicalized packet type.
+            key.version(),
+            symm.into(),
+            aead.into(),
+        ];
+        let mut kek = vec![0; symm.key_size()?].into();
+        Backend::hkdf_sha256(&derived_key, None, &info, &mut kek)?;
+
+        let mut ad = Vec::with_capacity(key.serialized_len());
+        ad.push(0b1100_0000 | u8::from(tag)); // Canonicalized packet type.
+        key.serialize(&mut ad)?;
+
+        Ok(Self {
+            symm,
+            aead,
+            nonce,
+            kek,
+            ad,
+        })
+    }
+
+    fn decryptor(&self) -> Result<Box<dyn crypto::aead::Aead>> {
+        use crypto::aead::CipherOp;
+        self.aead.context(self.symm, &self.kek, &self.ad, self.nonce,
+                          CipherOp::Decrypt)
+    }
+
+    fn encryptor(&self) -> Result<Box<dyn crypto::aead::Aead>> {
+        use crypto::aead::CipherOp;
+        self.aead.context(self.symm, &self.kek, &self.ad, self.nonce,
+                          CipherOp::Encrypt)
     }
 }
 
@@ -2600,6 +2776,8 @@ mod tests {
     #[test]
     fn secret_encryption_roundtrip() {
         use crate::types::Curve::*;
+        use crate::types::SymmetricAlgorithm::*;
+        use crate::types::AEADAlgorithm::*;
 
         let keys = vec![NistP256, NistP384, NistP521].into_iter()
             .filter_map(|cv| -> Option<Key<key::SecretParts, key::PrimaryRole>> {
@@ -2609,13 +2787,20 @@ mod tests {
             }));
 
         for key in keys {
+          for (symm, aead) in [(AES128, None),
+                               (AES128, Some(OCB)),
+                               (AES256, Some(EAX))] {
+            if ! aead.map(|a| a.is_supported()).unwrap_or(true) {
+                continue;
+            }
             assert!(! key.secret().is_encrypted());
 
             let password = Password::from("foobarbaz");
             let mut encrypted_key = key.clone();
 
             encrypted_key.secret_mut()
-                .encrypt_in_place(&key, &password).unwrap();
+                .encrypt_in_place_with(&key, S2K::default(), symm, aead,
+                                       &password).unwrap();
             assert!(encrypted_key.secret().is_encrypted());
 
             encrypted_key.secret_mut()
@@ -2623,6 +2808,7 @@ mod tests {
             assert!(! key.secret().is_encrypted());
             assert_eq!(key, encrypted_key);
             assert_eq!(key.secret(), encrypted_key.secret());
+          }
         }
     }
 

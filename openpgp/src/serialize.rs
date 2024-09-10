@@ -2224,24 +2224,38 @@ impl<P, R> Marshal for Key4<P, R>
                     mpis.serialize_with_checksum(o, SecretKeyChecksum::Sum16)
                 })?,
                 SecretKeyMaterial::Encrypted(ref e) => {
-                    // S2K usage
-                    #[allow(deprecated)]
-                    if let S2K::Implicit = e.s2k() {
-                        // When the legacy implicit S2K mechanism is
-                        // in use, the symmetric algorithm octet below
-                        // takes the place of the S2K usage octet.
+                    if let (Some(aead_algo), Some(aead_iv)) =
+                        (e.aead_algo(), e.aead_iv())
+                    {
+                        o.write_all(&[
+                            253, // S2K usage.
+                            // No Parameter length for v4 packets.
+                            e.algo().into(),
+                            aead_algo.into(),
+                        ])?;
+                        e.s2k().serialize(o)?;
+                        o.write_all(aead_iv)?;
+                        o.write_all(e.raw_ciphertext())?;
                     } else {
-                        write_byte(o, match e.checksum() {
-                            Some(SecretKeyChecksum::SHA1) => 254,
-                            Some(SecretKeyChecksum::Sum16) => 255,
-                            None => return Err(Error::InvalidOperation(
-                                "In Key4 packets, encrypted secret keys must be \
-                                 checksummed".into()).into()),
-                        })?;
+                        // S2K usage
+                        #[allow(deprecated)]
+                        if let S2K::Implicit = e.s2k() {
+                            // When the legacy implicit S2K mechanism is
+                            // in use, the symmetric algorithm octet below
+                            // takes the place of the S2K usage octet.
+                        } else {
+                            write_byte(o, match e.checksum() {
+                                Some(SecretKeyChecksum::SHA1) => 254,
+                                Some(SecretKeyChecksum::Sum16) => 255,
+                                None => return Err(Error::InvalidOperation(
+                                    "In Key4 packets, CFB encrypted secret keys must be \
+                                     checksummed".into()).into()),
+                            })?;
+                        }
+                        write_byte(o, e.algo().into())?;
+                        e.s2k().serialize(o)?;
+                        o.write_all(e.raw_ciphertext())?;
                     }
-                    write_byte(o, e.algo().into())?;
-                    e.s2k().serialize(o)?;
-                    o.write_all(e.raw_ciphertext())?;
                 },
             }
         }
@@ -2270,7 +2284,9 @@ impl<P, R> NetLength for Key4<P, R>
                     SecretKeyMaterial::Encrypted(ref e) =>
                         matches!(e.s2k(), S2K::Implicit)
                         .then_some(0).unwrap_or(1)
+                        + if e.aead_algo().is_some() { 1 } else { 0 }
                         + e.s2k().serialized_len()
+                        + e.aead_iv().map(|iv| iv.len()).unwrap_or(0)
                         + e.raw_ciphertext().len(),
                 }
             } else {
@@ -2339,7 +2355,7 @@ impl<P, R> Marshal for Key6<P, R>
                                 Some(SecretKeyChecksum::SHA1) => 254,
                                 Some(SecretKeyChecksum::Sum16) => 255,
                                 None => return Err(Error::InvalidOperation(
-                                    "In Key6 packets, encrypted secret keys \
+                                    "In Key6 packets, CFB encrypted secret keys \
                                      must be checksummed".into()).into()),
                             },
                             (1 + 1 + e.s2k().serialized_len())

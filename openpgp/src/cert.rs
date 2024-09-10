@@ -7575,6 +7575,11 @@ Pu1xwz57O4zo1VYf6TqHJzVC3OMvMUM2hhdecMUe5x6GorNaj6g=
         assert_eq!(vcert.keys().for_signing().count(), 1);
         assert_eq!(vcert.keys().for_transport_encryption().count(), 1);
 
+        let password = "correct horse battery staple".into();
+        for skb in vcert.keys().encrypted_secret() {
+            skb.key().secret().clone().decrypt(skb.key(), &password)?;
+        }
+
         Ok(())
     }
 }

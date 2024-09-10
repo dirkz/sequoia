@@ -2687,6 +2687,35 @@ impl Key4<key::UnspecifiedParts, key::UnspecifiedRole>
                             Some(mpi::SecretKeyChecksum::Sum16)));
                     sec.into()
                 }
+
+                // AEAD encrypted secrets.
+                253 => {
+                    let sym_algo: SymmetricAlgorithm =
+                        php_try!(php.parse_u8("sym_algo")).into();
+
+                    let aead_algo: AEADAlgorithm =
+                        php_try!(php.parse_u8("aead_algo")).into();
+
+                    let s2k = php_try!(S2K::parse_v4(&mut php));
+
+                    let aead_iv = php_try!(php.parse_bytes(
+                        "aead_iv",
+                        // If we don't know the AEAD mode, we won't
+                        // know the nonce size, and all of the IV will
+                        // end up in the ciphertext.  This is a
+                        // inherent limitation of the v4 packet
+                        // format.
+                        aead_algo.nonce_size().unwrap_or(0)))
+                        .into();
+
+                    let cipher =
+                        php_try!(php.parse_bytes_eof("encrypted_mpis"))
+                        .into_boxed_slice();
+
+                    crate::packet::key::Encrypted::new_aead(
+                        s2k, sym_algo, aead_algo, aead_iv, cipher).into()
+                },
+
                 // Encrypted, whether we support the S2K method or not.
                 _ => {
                     let sk: SymmetricAlgorithm = match s2k_usage {
