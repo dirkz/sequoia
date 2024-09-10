@@ -83,6 +83,7 @@ pub trait Asymmetric {
     }
 
     /// Computes the public key for a given secret key.
+    #[allow(dead_code)]
     fn x448_derive_public(_secret: &Protected) -> Result<[u8; 56]> {
         Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::X448).into())
     }
@@ -117,6 +118,7 @@ pub trait Asymmetric {
     }
 
     /// Computes the public key for a given secret key.
+    #[allow(dead_code)]
     fn ed448_derive_public(_secret: &Protected) -> Result<[u8; 57]> {
         Err(Error::UnsupportedPublicKeyAlgorithm(PublicKeyAlgorithm::Ed448).into())
     }
