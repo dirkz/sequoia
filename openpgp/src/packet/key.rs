@@ -1726,10 +1726,12 @@ impl<R> Key4<SecretParts, R>
     /// [protected with a password]: https://tools.ietf.org/html/rfc4880#section-5.5.3
     /// [KDF]: https://tools.ietf.org/html/rfc4880#section-3.7
     /// [`Key::decrypt_secret`]: super::Key::decrypt_secret()
-    pub fn decrypt_secret(mut self, password: &Password) -> Result<Self> {
-        let pk_algo = self.pk_algo;
-        self.secret_mut().decrypt_in_place(pk_algo, password)?;
-        Ok(self)
+    pub fn decrypt_secret(self, password: &Password) -> Result<Self> {
+        let (key, mut secret) = self.take_secret();
+        let key = Key::V4(key);
+        secret.decrypt_in_place(&key, password)?;
+        let key = if let Key::V4(k) = key { k } else { unreachable!() };
+        Ok(key.add_secret(secret).0)
     }
 
     /// Encrypts the secret key material using `password`.
@@ -1746,11 +1748,14 @@ impl<R> Key4<SecretParts, R>
     /// [protected with a password]: https://tools.ietf.org/html/rfc4880#section-5.5.3
     /// [KDF]: https://tools.ietf.org/html/rfc4880#section-3.7
     /// [`Key::encrypt_secret`]: super::Key::encrypt_secret()
-    pub fn encrypt_secret(mut self, password: &Password)
+    pub fn encrypt_secret(self, password: &Password)
         -> Result<Key4<SecretParts, R>>
     {
-        self.secret_mut().encrypt_in_place(password)?;
-        Ok(self)
+        let (key, mut secret) = self.take_secret();
+        let key = Key::V4(key);
+        secret.encrypt_in_place(&key, password)?;
+        let key = if let Key::V4(k) = key { k } else { unreachable!() };
+        Ok(key.add_secret(secret).0)
     }
 }
 
@@ -1816,11 +1821,15 @@ impl SecretKeyMaterial {
     ///
     /// This returns an error if the secret key material is not
     /// encrypted or the password is incorrect.
-    pub fn decrypt(mut self, pk_algo: PublicKeyAlgorithm,
-                   password: &Password)
-        -> Result<Self>
+    pub fn decrypt<P, R>(mut self,
+                         key: &Key<P, R>,
+                         password: &Password)
+                         -> Result<Self>
+    where
+        P: KeyParts,
+        R: KeyRole,
     {
-        self.decrypt_in_place(pk_algo, password)?;
+        self.decrypt_in_place(key, password)?;
         Ok(self)
     }
 
@@ -1832,13 +1841,17 @@ impl SecretKeyMaterial {
     ///
     /// This returns an error if the secret key material is not
     /// encrypted or the password is incorrect.
-    pub fn decrypt_in_place(&mut self, pk_algo: PublicKeyAlgorithm,
-                            password: &Password)
-        -> Result<()>
+    pub fn decrypt_in_place<P, R>(&mut self,
+                                  key: &Key<P, R>,
+                                  password: &Password)
+                                  -> Result<()>
+    where
+        P: KeyParts,
+        R: KeyRole,
     {
         match self {
             SecretKeyMaterial::Encrypted(e) => {
-                *self = e.decrypt(pk_algo, password)?.into();
+                *self = e.decrypt(key, password)?.into();
                 Ok(())
             }
             SecretKeyMaterial::Unencrypted(_) =>
@@ -1852,8 +1865,15 @@ impl SecretKeyMaterial {
     /// This returns an error if the secret key material is encrypted.
     ///
     /// See [`Unencrypted::encrypt`] for details.
-    pub fn encrypt(mut self, password: &Password) -> Result<Self> {
-        self.encrypt_in_place(password)?;
+    pub fn encrypt<P, R>(mut self,
+                         key: &Key<P, R>,
+                         password: &Password)
+                         -> Result<Self>
+    where
+        P: KeyParts,
+        R: KeyRole,
+    {
+        self.encrypt_in_place(key, password)?;
         Ok(self)
     }
 
@@ -1862,11 +1882,18 @@ impl SecretKeyMaterial {
     /// This returns an error if the secret key material is encrypted.
     ///
     /// See [`Unencrypted::encrypt`] for details.
-    pub fn encrypt_in_place(&mut self, password: &Password) -> Result<()> {
+    pub fn encrypt_in_place<P, R>(&mut self,
+                                  key: &Key<P, R>,
+                                  password: &Password)
+                                  -> Result<()>
+    where
+        P: KeyParts,
+        R: KeyRole,
+    {
         match self {
             SecretKeyMaterial::Unencrypted(ref u) => {
                 *self = SecretKeyMaterial::Encrypted(
-                    u.encrypt(password)?);
+                    u.encrypt(key, password)?);
                 Ok(())
             }
             SecretKeyMaterial::Encrypted(_) =>
@@ -1945,8 +1972,13 @@ impl Unencrypted {
     ///
     /// [AES 256]: crate::types::SymmetricAlgorithm::AES256
     /// [`S2K`]: super::super::crypto::S2K
-    pub fn encrypt(&self, password: &Password)
-        -> Result<Encrypted>
+    pub fn encrypt<P, R>(&self,
+                         _key: &Key<P, R>,
+                         password: &Password)
+                         -> Result<Encrypted>
+    where
+        P: KeyParts,
+        R: KeyRole,
     {
         use std::io::Write;
         use crate::crypto::symmetric::Encryptor;
@@ -2129,16 +2161,19 @@ impl Encrypted {
     /// The `Encrypted` key does not know what kind of key it is, so
     /// the public key algorithm is needed to parse the correct number
     /// of MPIs.
-    pub fn decrypt(&self, pk_algo: PublicKeyAlgorithm, password: &Password)
-        -> Result<Unencrypted>
+    pub fn decrypt<P, R>(&self, key: &Key<P, R>, password: &Password)
+                         -> Result<Unencrypted>
+    where
+        P: KeyParts,
+        R: KeyRole,
     {
         use std::io::{Cursor, Read};
         use crate::crypto::symmetric::Decryptor;
 
-        let key = self.s2k.derive_key(password, self.algo.key_size()?)?;
+        let derived_key = self.s2k.derive_key(password, self.algo.key_size()?)?;
         let ciphertext = self.ciphertext()?;
         let cur = Cursor::new(ciphertext);
-        let mut dec = Decryptor::new(self.algo, &key, cur)?;
+        let mut dec = Decryptor::new(self.algo, &derived_key, cur)?;
 
         // Consume the first block.
         let block_size = self.algo.block_size()?;
@@ -2150,7 +2185,7 @@ impl Encrypted {
         dec.read_exact(&mut secret)?;
 
         mpi::SecretKeyMaterial::from_bytes_with_checksum(
-            pk_algo, &secret, self.checksum.unwrap_or_default())
+            key.pk_algo(), &secret, self.checksum.unwrap_or_default())
             .map(|m| m.into())
     }
 }
@@ -2220,17 +2255,18 @@ impl Arbitrary for Key4<SecretParts, SubordinateRole> {
 #[cfg(test)]
 impl Arbitrary for Key4<SecretParts, UnspecifiedRole> {
     fn arbitrary(g: &mut Gen) -> Self {
-        let key = Key4::arbitrary(g);
+        let key = Key::V4(Key4::arbitrary(g));
         let mut secret: SecretKeyMaterial =
             mpi::SecretKeyMaterial::arbitrary_for(g, key.pk_algo())
             .expect("only known algos used")
             .into();
 
         if <bool>::arbitrary(g) {
-            secret.encrypt_in_place(&Password::from(Vec::arbitrary(g)))
+            secret.encrypt_in_place(&key, &Password::from(Vec::arbitrary(g)))
                 .unwrap();
         }
 
+        let key = if let Key::V4(k) = key { k } else { unreachable!() };
         Key4::<PublicParts, UnspecifiedRole>::add_secret(key, secret).0
     }
 }
@@ -2255,12 +2291,12 @@ mod tests {
     fn encrypted_rsa_key() {
         let cert = Cert::from_bytes(
             crate::tests::key("testy-new-encrypted-with-123.pgp")).unwrap();
-        let mut pair = cert.primary_key().key().clone();
-        let pk_algo = pair.pk_algo();
-        let secret = pair.secret.as_mut().unwrap();
+        let key = cert.primary_key().key().clone();
+        let (key, secret) = key.take_secret();
+        let mut secret = secret.unwrap();
 
         assert!(secret.is_encrypted());
-        secret.decrypt_in_place(pk_algo, &"123".into()).unwrap();
+        secret.decrypt_in_place(&key, &"123".into()).unwrap();
         assert!(!secret.is_encrypted());
 
         match secret {
@@ -2491,10 +2527,10 @@ mod tests {
         use crate::types::Curve::*;
 
         let keys = vec![NistP256, NistP384, NistP521].into_iter()
-            .filter_map(|cv| -> Option<Key4<key::SecretParts, key::PrimaryRole>> {
-                Key4::generate_ecc(false, cv).ok()
+            .filter_map(|cv| -> Option<Key<key::SecretParts, key::PrimaryRole>> {
+                Key4::generate_ecc(false, cv).map(Into::into).ok()
             }).chain(vec![1024, 2048, 3072, 4096].into_iter().filter_map(|b| {
-                Key4::generate_rsa(b).ok()
+                Key4::generate_rsa(b).map(Into::into).ok()
             }));
 
         for key in keys {
@@ -2503,11 +2539,12 @@ mod tests {
             let password = Password::from("foobarbaz");
             let mut encrypted_key = key.clone();
 
-            encrypted_key.secret_mut().encrypt_in_place(&password).unwrap();
+            encrypted_key.secret_mut()
+                .encrypt_in_place(&key, &password).unwrap();
             assert!(encrypted_key.secret().is_encrypted());
 
             encrypted_key.secret_mut()
-                .decrypt_in_place(key.pk_algo, &password).unwrap();
+                .decrypt_in_place(&key, &password).unwrap();
             assert!(! key.secret().is_encrypted());
             assert_eq!(key, encrypted_key);
             assert_eq!(key.secret(), encrypted_key.secret());

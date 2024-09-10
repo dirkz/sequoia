@@ -155,7 +155,9 @@ impl KeyBuilder {
         let signer = key.clone().into_keypair().unwrap();
 
         if let Some(ref password) = self.password {
-            key.secret_mut().encrypt_in_place(password)?;
+            let (k, mut secret) = key.take_secret();
+            secret.encrypt_in_place(&k, password)?;
+            key = k.add_secret(secret).0;
         }
 
         let mut builder = SubkeyBuilder::new(

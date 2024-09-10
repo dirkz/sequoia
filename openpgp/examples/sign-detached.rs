@@ -29,20 +29,18 @@ fn main() -> openpgp::Result<()> {
             .context("Failed to read key")?;
         let mut n = 0;
 
-        for key in tsk
+        for skb in tsk
             .keys().with_policy(p, None).alive().revoked(false).for_signing().secret()
-            .map(|ka| ka.key())
         {
             keys.push({
-                let mut key = key.clone();
+                let mut key = skb.key().clone();
                 if key.secret().is_encrypted() {
                     let password = rpassword::prompt_password(format!(
                         "Please enter password to decrypt {}/{}: ",
                         tsk, key
                     ))?;
-                    let algo = key.pk_algo();
                     key.secret_mut()
-                        .decrypt_in_place(algo, &password.into())
+                        .decrypt_in_place(skb.key(), &password.into())
                         .context("decryption failed")?;
                 }
                 n += 1;
