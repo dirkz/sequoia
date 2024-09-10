@@ -2323,7 +2323,7 @@ impl<P, R> Marshal for Key6<P, R>
                     {
                         o.write_all(&[
                             253, // S2K usage.
-                            (1 + 1 + e.s2k().serialized_len() + aead_iv.len())
+                            (1 + 1 + 1 + e.s2k().serialized_len() + aead_iv.len())
                                 .try_into().unwrap_or(0),
                             e.algo().into(),
                             aead_algo.into(),
