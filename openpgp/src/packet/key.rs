@@ -430,6 +430,9 @@ pub trait KeyRole: fmt::Debug + seal::Sealed {
     fn convert_bundle_ref<P: KeyParts>(bundle: &KeyBundle<P, UnspecifiedRole>)
                                        -> &KeyBundle<P, Self>
         where Self: Sized;
+
+    /// Returns the role as a runtime value.
+    fn role() -> KeyRoleRT;
 }
 
 /// A marker that indicates that a `Key` should be treated like a
@@ -638,8 +641,11 @@ impl KeyRole for PrimaryRole {
                                        -> &KeyBundle<P, Self> {
         bundle.into()
     }
-}
 
+    fn role() -> KeyRoleRT {
+        KeyRoleRT::Primary
+    }
+}
 
 /// A marker that indicates the `Key` should treated like a subkey.
 ///
@@ -670,6 +676,10 @@ impl KeyRole for SubordinateRole {
     fn convert_bundle_ref<P: KeyParts>(bundle: &KeyBundle<P, UnspecifiedRole>)
                                        -> &KeyBundle<P, Self> {
         bundle.into()
+    }
+
+    fn role() -> KeyRoleRT {
+        KeyRoleRT::Subordinate
     }
 }
 
@@ -710,6 +720,42 @@ impl KeyRole for UnspecifiedRole {
                                        -> &KeyBundle<P, Self> {
         bundle
     }
+
+    fn role() -> KeyRoleRT {
+        KeyRoleRT::Unspecified
+    }
+}
+
+/// Encodes the key role at run time.
+///
+/// While `KeyRole` tracks the key's role in the type system,
+/// `KeyRoleRT` tracks the key role at run time.
+///
+/// When we are doing a reference conversion (e.g. by using
+/// [`Key::role_as_primary`]), we do not change the key's role.  But,
+/// when we are doing an owned conversion (e.g. by using
+/// [`Key::role_into_primary`]), we do change the key's role.  The
+/// rationale here is that the former conversion is done to allow a
+/// reference to be given to a function expecting a certain shape of
+/// key (e.g. to prevent excessive monomorphization), while the latter
+/// conversion signals intent (e.g. to put a key into a
+/// `Packet::PublicKey`).
+///
+/// This is similar to how we have `KeyParts` that track the presence
+/// or absence of secret key material in the type system, yet at run
+/// time a key may or may not actually have secret key material (with
+/// the constraint that a key with `SecretParts` MUST have secret key
+/// material).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyRoleRT {
+    /// The key is a primary key.
+    Primary,
+
+    /// The key is a subkey.
+    Subordinate,
+
+    /// The key's role is unspecified.
+    Unspecified,
 }
 
 /// A Public Key.
@@ -953,6 +999,9 @@ pub struct Key4<P, R>
 
     fingerprint: once_cell::sync::OnceCell<Fingerprint>,
 
+    /// The key role tracked at run time.
+    role: KeyRoleRT,
+
     p: std::marker::PhantomData<P>,
     r: std::marker::PhantomData<R>,
 }
@@ -975,6 +1024,7 @@ impl<P, R> Clone for Key4<P, R>
             mpis: self.mpis.clone(),
             secret: self.secret.clone(),
             fingerprint: self.fingerprint().clone().into(),
+            role: self.role.clone(),
             p: std::marker::PhantomData,
             r: std::marker::PhantomData,
         }
@@ -1133,9 +1183,14 @@ where
             mpis,
             secret,
             fingerprint: Default::default(),
+            role: R::role(),
             p: std::marker::PhantomData,
             r: std::marker::PhantomData,
         })
+    }
+
+    pub(crate) fn set_role(&mut self, role: KeyRoleRT) {
+        self.role = role;
     }
 }
 
@@ -1155,6 +1210,7 @@ impl<R> Key4<key::PublicParts, R>
             mpis,
             secret: None,
             fingerprint: Default::default(),
+            role: R::role(),
             p: std::marker::PhantomData,
             r: std::marker::PhantomData,
         })
@@ -1247,6 +1303,7 @@ impl<R> Key4<SecretParts, R>
             mpis,
             secret: Some(secret),
             fingerprint: Default::default(),
+            role: R::role(),
             p: std::marker::PhantomData,
             r: std::marker::PhantomData,
         })
@@ -2232,6 +2289,7 @@ impl Arbitrary for Key4<PublicParts, UnspecifiedRole> {
             mpis,
             secret: None,
             fingerprint: Default::default(),
+            role: UnspecifiedRole::role(),
             p: std::marker::PhantomData,
             r: std::marker::PhantomData,
         }

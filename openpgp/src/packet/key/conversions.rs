@@ -20,8 +20,10 @@ use crate::Result;
 macro_rules! convert {
     ( $x:ident ) => {
         // XXX: This is ugly, but how can we do better?
+        { // XXX: Appease rustc 1.80.1 which doesn't like annotations on expressions.
         #[allow(clippy::missing_transmute_annotations)]
         unsafe { std::mem::transmute($x) }
+        }
     }
 }
 
@@ -272,7 +274,9 @@ macro_rules! create_role_conversions {
                     where P: KeyParts
                 {
                     fn from(p: $Key<$($l, )* P, $from_role>) -> Self {
-                        convert!(p)
+                        let mut k: Self = convert!(p);
+                        k.set_role(<$to_role>::role());
+                        k
                     }
                 }
 
@@ -318,7 +322,9 @@ macro_rules! create_conversions {
                 impl<$($l ),*> From<$Key<$($l, )* $from_parts, $from_role>> for $Key<$($l, )* $to_parts, $to_role>
                 {
                     fn from(p: $Key<$($l, )* $from_parts, $from_role>) -> Self {
-                        convert!(p)
+                        let mut k: Self = convert!(p);
+                        k.set_role(<$to_role>::role());
+                        k
                     }
                 }
 
@@ -345,7 +351,8 @@ macro_rules! create_conversions {
                     type Error = anyhow::Error;
                     fn try_from(p: $Key<$($l, )* $from_parts, $from_role>) -> Result<Self> {
                         // First, just change the role.
-                        let k: $Key<$($l, )* $from_parts, $to_role> = p.into();
+                        let mut k: $Key<$($l, )* $from_parts, $to_role> = p.into();
+                        k.set_role(<$to_role>::role());
                         // Now change the parts.
                         k.try_into()
                     }
@@ -474,7 +481,9 @@ macro_rules! create_conversions {
         {
             /// Changes the key's role tag to `PrimaryRole`.
             pub fn role_into_primary(self) -> $Key<$($l, )* P, PrimaryRole> {
-                convert!(self)
+                let mut k: $Key<$($l, )* P, PrimaryRole> = convert!(self);
+                k.set_role(PrimaryRole::role());
+                k
             }
 
             /// Changes the key's role tag to `PrimaryRole`.
@@ -490,7 +499,9 @@ macro_rules! create_conversions {
             /// Changes the key's role tag to `SubordinateRole`.
             pub fn role_into_subordinate(self) -> $Key<$($l, )* P, SubordinateRole>
             {
-                convert!(self)
+                let mut k: $Key<$($l, )* P, SubordinateRole> = convert!(self);
+                k.set_role(SubordinateRole::role());
+                k
             }
 
             /// Changes the key's role tag to `SubordinateRole`.
@@ -508,7 +519,9 @@ macro_rules! create_conversions {
             /// Changes the key's role tag to `UnspecifiedRole`.
             pub fn role_into_unspecified(self) -> $Key<$($l, )* P, UnspecifiedRole>
             {
-                convert!(self)
+                let mut k: $Key<$($l, )* P, UnspecifiedRole> = convert!(self);
+                k.set_role(UnspecifiedRole::role());
+                k
             }
 
             /// Changes the key's role tag to `UnspecifiedRole`.

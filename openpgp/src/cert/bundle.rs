@@ -231,7 +231,7 @@ impl<C> ComponentBundle<C> {
     }
 
     /// Returns a mutable reference to the component.
-    fn component_mut(&mut self) -> &mut C {
+    pub(crate) fn component_mut(&mut self) -> &mut C {
         &mut self.component
     }
 
@@ -922,6 +922,10 @@ impl<P: key::KeyParts, R: key::KeyRole> ComponentBundle<Key<P, R>> {
     /// Returns a mut reference to the key.
     pub(crate) fn key_mut(&mut self) -> &mut Key<P, R> {
         self.component_mut()
+    }
+
+    pub(crate) fn set_role(&mut self, role: key::KeyRoleRT) {
+        self.key_mut().set_role(role);
     }
 }
 

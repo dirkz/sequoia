@@ -451,6 +451,17 @@ assert_send_and_sync!(KeyAmalgamation<'_, P, R, R2>
           R2,
 );
 
+impl<'a, P, R> ComponentAmalgamation<'a, Key<P, R>>
+where
+    P: key::KeyParts,
+    R: key::KeyRole,
+{
+    pub(crate) fn set_role(&mut self, _: key::KeyRoleRT) {
+        // The amalgamation only has a immutable reference, we cannot
+        // change the role.
+    }
+}
+
 // derive(Clone) doesn't work with generic parameters that don't
 // implement clone.  But, we don't need to require that C implements
 // Clone, because we're not cloning C, just the reference.
