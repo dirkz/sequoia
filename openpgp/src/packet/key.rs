@@ -2032,21 +2032,25 @@ impl Arbitrary for Key4<PublicParts, UnspecifiedRole> {
 #[cfg(test)]
 impl Arbitrary for Key4<SecretParts, PrimaryRole> {
     fn arbitrary(g: &mut Gen) -> Self {
-        Key4::<SecretParts, UnspecifiedRole>::arbitrary(g).into()
+        Key4::<SecretParts, PrimaryRole>::arbitrary_secret_key(g)
     }
 }
 
 #[cfg(test)]
 impl Arbitrary for Key4<SecretParts, SubordinateRole> {
     fn arbitrary(g: &mut Gen) -> Self {
-        Key4::<SecretParts, UnspecifiedRole>::arbitrary(g).into()
+        Key4::<SecretParts, SubordinateRole>::arbitrary_secret_key(g)
     }
 }
 
 #[cfg(test)]
-impl Arbitrary for Key4<SecretParts, UnspecifiedRole> {
-    fn arbitrary(g: &mut Gen) -> Self {
-        let key = Key4::arbitrary(g);
+impl<R> Key4<SecretParts, R>
+where
+    R: KeyRole,
+    Key4::<PublicParts, R>: Arbitrary,
+{
+    fn arbitrary_secret_key(g: &mut Gen) -> Self {
+        let key = Key::V4(Key4::<PublicParts, R>::arbitrary(g));
         let mut secret: SecretKeyMaterial =
             mpi::SecretKeyMaterial::arbitrary_for(g, key.pk_algo())
             .expect("only known algos used")
@@ -2057,7 +2061,9 @@ impl Arbitrary for Key4<SecretParts, UnspecifiedRole> {
                 .unwrap();
         }
 
-        Key4::<PublicParts, UnspecifiedRole>::add_secret(key, secret).0
+        #[allow(irrefutable_let_patterns)]
+        let key = if let Key::V4(k) = key { k } else { unreachable!() };
+        Key4::<PublicParts, R>::add_secret(key, secret).0
     }
 }
 
@@ -2099,11 +2105,23 @@ mod tests {
     }
 
     #[test]
-    fn key_encrypt_decrypt() -> Result<()> {
+    fn primary_key_encrypt_decrypt() -> Result<()> {
+        key_encrypt_decrypt::<PrimaryRole>()
+    }
+
+    #[test]
+    fn subkey_encrypt_decrypt() -> Result<()> {
+        key_encrypt_decrypt::<SubordinateRole>()
+    }
+
+    fn key_encrypt_decrypt<R>() -> Result<()>
+    where
+        R: KeyRole + PartialEq,
+    {
         let mut g = quickcheck::Gen::new(256);
         let p: Password = Vec::<u8>::arbitrary(&mut g).into();
 
-        let check = |key: Key4<SecretParts, UnspecifiedRole>| -> Result<()> {
+        let check = |key: Key4<SecretParts, R>| -> Result<()> {
             let key: Key<_, _> = key.into();
             let encrypted = key.clone().encrypt_secret(&p)?;
             let decrypted = encrypted.decrypt_secret(&p)?;
@@ -2118,7 +2136,7 @@ mod tests {
                 continue;
             }
 
-            let key: Key4<_, key::UnspecifiedRole>
+            let key: Key4<_, R>
                 = Key4::generate_ecc(true, curve.clone())?;
             check(key)?;
         }
@@ -2129,7 +2147,7 @@ mod tests {
                 continue;
             }
 
-            let key: Key4<_, key::UnspecifiedRole>
+            let key: Key4<_, R>
                 = Key4::generate_rsa(bits)?;
             check(key)?;
         }
@@ -2183,12 +2201,13 @@ mod tests {
     }
 
     quickcheck! {
-        fn roundtrip_secret(p: Key<SecretParts, UnspecifiedRole>) -> bool {
+        fn roundtrip_secret(p: Key<SecretParts, PrimaryRole>) -> bool {
             use crate::parse::Parse;
             use crate::serialize::MarshalInto;
             let buf = p.to_vec().expect("Failed to serialize key");
             let q = Key::from_bytes(&buf).expect("Failed to parse key")
-                .parts_into_secret().expect("No secret material");
+                .parts_into_secret().expect("No secret material")
+                .role_into_primary();
             assert_eq!(p, q);
             true
         }

@@ -552,14 +552,14 @@ impl Arbitrary for Packet {
         match gen_arbitrary_from_range(0..15, g) {
             0 => Signature::arbitrary(g).into(),
             1 => OnePassSig::arbitrary(g).into(),
-            2 => Key::<key::PublicParts, key::UnspecifiedRole>::arbitrary(g)
-                .role_into_primary().into(),
-            3 => Key::<key::PublicParts, key::UnspecifiedRole>::arbitrary(g)
-                .role_into_subordinate().into(),
-            4 => Key::<key::SecretParts, key::UnspecifiedRole>::arbitrary(g)
-                .role_into_primary().into(),
-            5 => Key::<key::SecretParts, key::UnspecifiedRole>::arbitrary(g)
-                .role_into_subordinate().into(),
+            2 => Key::<key::PublicParts, key::PrimaryRole>::arbitrary(g)
+                .into(),
+            3 => Key::<key::PublicParts, key::SubordinateRole>::arbitrary(g)
+                .into(),
+            4 => Key::<key::SecretParts, key::PrimaryRole>::arbitrary(g)
+                .into(),
+            5 => Key::<key::SecretParts, key::SubordinateRole>::arbitrary(g)
+                .into(),
             6 => Marker::arbitrary(g).into(),
             7 => Trust::arbitrary(g).into(),
             8 => UserID::arbitrary(g).into(),

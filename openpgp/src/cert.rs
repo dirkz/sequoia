@@ -5122,12 +5122,11 @@ mod test {
         let packets = cert.clone().into_packets2().count();
         assert_eq!(cert.keys().count(), 1);
 
-        let key = cert.keys().secret().next().unwrap().key();
+        let key = cert.keys().secret().next().unwrap().key()
+            .role_as_primary();
         assert!(key.has_secret());
-        let key_a = key.clone().encrypt_secret(&Password::from("a"))?
-            .role_into_primary();
-        let key_b = key.clone().encrypt_secret(&Password::from("b"))?
-            .role_into_primary();
+        let key_a = key.clone().encrypt_secret(&Password::from("a"))?;
+        let key_b = key.clone().encrypt_secret(&Password::from("b"))?;
 
         // Insert variant a.
         let cert2 = cert.clone().insert_packets(key_a.clone())?;
