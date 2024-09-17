@@ -12,10 +12,8 @@ use crate::crypto::ecdh::{encrypt_wrap, decrypt_unwrap2};
 use win_crypto_ng as cng;
 use cng::asymmetric::{Ecdh, AsymmetricKey, Export};
 use cng::asymmetric::{Public, Private, AsymmetricAlgorithm, AsymmetricAlgorithmId};
-use cng::asymmetric::ecc::{NamedCurve, NistP256, NistP384, NistP521, Curve25519};
+use cng::asymmetric::ecc::{NamedCurve, NistP256, NistP384, NistP521};
 use cng::key_blob::{EccKeyPublicPayload, EccKeyPrivatePayload};
-
-const CURVE25519_SIZE: usize = 32;
 
 /// Wraps a session key using Elliptic Curve Diffie-Hellman.
 #[allow(non_snake_case)]
