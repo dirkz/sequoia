@@ -54,14 +54,19 @@ impl AEADAlgorithm {
                 match algo {
                     SymmetricAlgorithm::AES128 |
                     SymmetricAlgorithm::AES192 |
-                    SymmetricAlgorithm::AES256 |
-                    SymmetricAlgorithm::Twofish |
-                    SymmetricAlgorithm::Camellia128 |
-                    SymmetricAlgorithm::Camellia192 |
-                    SymmetricAlgorithm::Camellia256 => true,
+                    SymmetricAlgorithm::AES256 => true,
                     _ => false,
                 },
-            _ => false
+
+            AEADAlgorithm::GCM =>
+                match algo {
+                    SymmetricAlgorithm::AES128 |
+                    SymmetricAlgorithm::AES192 |
+                    SymmetricAlgorithm::AES256 => true,
+                    _ => false,
+                },
+
+            _ => false,
         }
     }
 }
