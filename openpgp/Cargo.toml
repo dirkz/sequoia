@@ -140,6 +140,7 @@ crypto-cng = [
     "dep:ed25519", "dep:ed25519-dalek",
     "dep:num-bigint-dig", "dep:aes-gcm", "dep:rand_core",
     "dep:hkdf", "dep:sha2",
+    "dep:ocb3",
 ]
 crypto-openssl = ["dep:openssl", "dep:openssl-sys"]
 crypto-botan = ["dep:botan", "botan?/botan3"]

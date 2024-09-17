@@ -58,6 +58,14 @@ impl AEADAlgorithm {
                     _ => false,
                 },
 
+            AEADAlgorithm::OCB =>
+                match algo {
+                    SymmetricAlgorithm::AES128 |
+                    SymmetricAlgorithm::AES192 |
+                    SymmetricAlgorithm::AES256 => true,
+                    _ => false,
+                },
+
             AEADAlgorithm::GCM =>
                 match algo {
                     SymmetricAlgorithm::AES128 |
