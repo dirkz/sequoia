@@ -2108,6 +2108,14 @@ impl Unencrypted {
         use crate::crypto::symmetric::Encryptor;
 
         let derived_key = s2k.derive_key(password, symm.key_size()?)?;
+        let checksum = Default::default();
+
+        constrain_encryption_methods(key, &s2k, symm, aead, Some(checksum))?;
+
+        if matches!(s2k, S2K::Argon2 { .. }) && aead.is_none() {
+            return Err(Error::InvalidOperation(
+                "Argon2 MUST be used with an AEAD mode".into()).into());
+        }
 
         if let Some(aead) = aead {
             use crate::serialize::MarshalInto;
@@ -2142,7 +2150,6 @@ impl Unencrypted {
             let mut trash = vec![0u8; symm.block_size()?];
             crypto::random(&mut trash);
 
-            let checksum = Default::default();
             let mut esk = Vec::new();
             let mut encryptor = Encryptor::new(symm, &derived_key, &mut esk)?;
             encryptor.write_all(&trash)?;
@@ -2323,6 +2330,10 @@ impl Encrypted {
         use std::io::{Cursor, Read};
         use crate::crypto;
 
+        constrain_encryption_methods(
+            key, &self.s2k, self.algo,self.aead.as_ref().map(|(a, _)| *a),
+            self.checksum)?;
+
         let derived_key = self.s2k.derive_key(password, self.algo.key_size()?)?;
         let ciphertext = self.ciphertext()?;
 
@@ -2363,6 +2374,46 @@ impl Encrypted {
                 key.pk_algo(), &secret, self.checksum.unwrap_or_default())
                 .map(|m| m.into())
         }
+    }
+}
+
+/// Constrains the secret key material encryption methods according to
+/// [Section 3.7.2.1. of RFC 9580].
+///
+/// [Section 3.7.2.1. of RFC 9580]: https://www.rfc-editor.org/rfc/rfc9580.html#section-3.7.2.1
+fn constrain_encryption_methods<P, R>(key: &Key<P, R>,
+                                      s2k: &S2K,
+                                      _symm: SymmetricAlgorithm,
+                                      aead: Option<AEADAlgorithm>,
+                                      checksum: Option<mpi::SecretKeyChecksum>)
+                                      -> Result<()>
+where
+    P: KeyParts,
+    R: KeyRole,
+{
+    #[allow(deprecated)]
+    match s2k {
+        S2K::Argon2 { .. } if aead.is_none() =>
+            Err(Error::InvalidOperation(
+                "Argon2 MUST be used with an AEAD mode".into()).into()),
+
+        S2K::Implicit if key.version() == 6 =>
+            Err(Error::InvalidOperation(
+                "Implicit S2K MUST NOT be used with v6 keys".into()).into()),
+
+        // Technically not forbidden, but this is a terrible idea and
+        // I doubt that anyone depends on it.  Let's see whether we
+        // can get away with being strict here.
+        S2K::Simple { .. } if key.version() == 6 =>
+            Err(Error::InvalidOperation(
+                "Simple S2K SHOULD NOT be used with v6 keys".into()).into()),
+
+        _ if key.version() == 6 && aead.is_none()
+            && checksum != Some(mpi::SecretKeyChecksum::SHA1) =>
+            Err(Error::InvalidOperation(
+                "Malleable CFB MUST NOT be used with v6 keys".into()).into()),
+
+        _ => Ok(()),
     }
 }
 
