@@ -86,6 +86,7 @@ hkdf = { version = "0.12", optional = true }
 idea = { version = "0.5", optional = true, features = ["zeroize"] }
 md-5 = { version = "0.10", features = ["oid"], optional = true }
 num-bigint-dig = { version = "0.8", default-features = false, optional = true }
+ocb3 = { version = "0.1", default-features = false, optional = true }
 p256 = { version = "0.13", optional = true, features = ["ecdh", "ecdsa"] }
 p384 = { version = "0.13", optional = true, features = ["ecdh", "ecdsa"] }
 p521 = { version = "0.13", optional = true, features = ["ecdh", "ecdsa"] }
@@ -127,7 +128,9 @@ crypto-rust = [
     "dep:md-5", "dep:num-bigint-dig", "dep:ripemd", "dep:rsa", "dep:sha2",
     "dep:sha3",
     "sha1collisiondetection/digest-trait", "sha1collisiondetection/oid",
-    "dep:twofish", "dep:typenum", "dep:x25519-dalek", "dep:p256",
+    "dep:twofish", "dep:typenum", "dep:x25519-dalek",
+    "dep:ocb3",
+    "dep:p256",
     "dep:p384", "dep:p521",
     "dep:rand", "rand?/getrandom", "dep:rand_core", "rand_core?/getrandom",
     "dep:ecdsa", "dep:aes-gcm", "dep:dsa", "dep:hkdf",

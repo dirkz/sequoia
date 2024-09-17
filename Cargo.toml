@@ -51,6 +51,8 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.num-bigint-dig]
 opt-level = 2
+[profile.dev.package.ocb3]
+opt-level = 2
 [profile.dev.package.p256]
 opt-level = 2
 [profile.dev.package.p384]
