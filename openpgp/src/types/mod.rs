@@ -109,6 +109,7 @@ pub enum PublicKeyAlgorithm {
     /// ElGamal (Encrypt-Only)
     ElGamalEncrypt,
     /// DSA (Digital Signature Algorithm)
+    #[deprecated(note = "Use a newer public key algorithm instead.")]
     DSA,
     /// Elliptic curve DH
     ECDH,

@@ -1473,6 +1473,7 @@ impl<R> Key4<SecretParts, R>
 
         Self::with_secret(
             crate::now(),
+            #[allow(deprecated)]
             PublicKeyAlgorithm::DSA,
             public_mpis,
             private_mpis.into())

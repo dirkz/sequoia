@@ -724,9 +724,9 @@ a_cutoff_list!(AsymmetricAlgorithmCutoffList, AsymmetricAlgorithm, 23,
                    ACCEPT,                   // 6. ElGamal3072.
                    ACCEPT,                   // 7. ElGamal4096.
                    Some(Timestamp::Y2014M2), // 8. DSA1024.
-                   ACCEPT,                   // 9. DSA2048.
-                   ACCEPT,                   // 10. DSA3072.
-                   ACCEPT,                   // 11. DSA4096.
+                   Some(Timestamp::Y2024M2), // 9. DSA2048.
+                   Some(Timestamp::Y2024M2), // 10. DSA3072.
+                   Some(Timestamp::Y2024M2), // 11. DSA4096.
                    ACCEPT,                   // 12. NistP256.
                    ACCEPT,                   // 13. NistP384.
                    ACCEPT,                   // 14. NistP521.
