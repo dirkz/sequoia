@@ -66,6 +66,16 @@ impl PKESK6 {
         where P: key::KeyParts,
               R: key::KeyRole,
     {
+        // ElGamal is phased out in RFC 9580.
+        #[allow(deprecated)]
+        if recipient.pk_algo() == PublicKeyAlgorithm::ElGamalEncrypt
+            || recipient.pk_algo() == PublicKeyAlgorithm::ElGamalEncryptSign
+        {
+            return Err(crate::Error::InvalidOperation(
+                "MUST NOT encrypt with version 6 ElGamal keys".into())
+                       .into());
+        }
+
         Ok(PKESK6 {
             common: Default::default(),
             recipient: Some(recipient.fingerprint()),

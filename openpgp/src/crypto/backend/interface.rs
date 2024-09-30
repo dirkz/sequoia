@@ -149,6 +149,7 @@ pub trait Asymmetric {
     fn elgamal_generate_key(p_bits: usize)
                             -> Result<(MPI, MPI, MPI, ProtectedMPI)> {
         let _ = p_bits;
+        #[allow(deprecated)]
         Err(Error::UnsupportedPublicKeyAlgorithm(
             PublicKeyAlgorithm::ElGamalEncrypt).into())
     }

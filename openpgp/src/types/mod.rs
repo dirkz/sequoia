@@ -106,7 +106,8 @@ pub enum PublicKeyAlgorithm {
     /// RSA Sign-Only, deprecated in RFC 4880.
     #[deprecated(note = "Use `PublicKeyAlgorithm::RSAEncryptSign`.")]
     RSASign,
-    /// ElGamal (Encrypt-Only)
+    /// ElGamal (Encrypt-Only), deprecated in RFC 9580.
+    #[deprecated(note = "Use a newer public key algorithm instead.")]
     ElGamalEncrypt,
     /// DSA (Digital Signature Algorithm)
     #[deprecated(note = "Use a newer public key algorithm instead.")]
@@ -116,8 +117,7 @@ pub enum PublicKeyAlgorithm {
     /// Elliptic curve DSA
     ECDSA,
     /// ElGamal (Encrypt or Sign), deprecated in RFC 4880.
-    #[deprecated(note = "If you really must, use \
-                         `PublicKeyAlgorithm::ElGamalEncrypt`.")]
+    #[deprecated(note = "Use a newer public key algorithm instead.")]
     ElGamalEncryptSign,
     /// "Twisted" Edwards curve DSA
     EdDSA,

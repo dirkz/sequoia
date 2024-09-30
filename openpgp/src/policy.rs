@@ -720,9 +720,9 @@ a_cutoff_list!(AsymmetricAlgorithmCutoffList, AsymmetricAlgorithm, 23,
                    ACCEPT,                   // 2. RSA3072.
                    ACCEPT,                   // 3. RSA4096.
                    Some(Timestamp::Y2014M2), // 4. ElGamal1024.
-                   ACCEPT,                   // 5. ElGamal2048.
-                   ACCEPT,                   // 6. ElGamal3072.
-                   ACCEPT,                   // 7. ElGamal4096.
+                   Some(Timestamp::Y2024M2), // 5. ElGamal2048.
+                   Some(Timestamp::Y2024M2), // 6. ElGamal3072.
+                   Some(Timestamp::Y2024M2), // 7. ElGamal4096.
                    Some(Timestamp::Y2014M2), // 8. DSA1024.
                    Some(Timestamp::Y2024M2), // 9. DSA2048.
                    Some(Timestamp::Y2024M2), // 10. DSA3072.

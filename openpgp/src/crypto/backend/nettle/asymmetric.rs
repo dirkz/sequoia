@@ -314,9 +314,11 @@ impl KeyPair {
 
             (PublicKey::ElGamal{ .. },
              mpi::SecretKeyMaterial::ElGamal{ .. },
-             mpi::Ciphertext::ElGamal{ .. }) =>
+             mpi::Ciphertext::ElGamal{ .. }) => {
+                #[allow(deprecated)]
                 return Err(
-                    Error::UnsupportedPublicKeyAlgorithm(ElGamalEncrypt).into()),
+                    Error::UnsupportedPublicKeyAlgorithm(ElGamalEncrypt).into());
+            },
 
             (PublicKey::ECDH{ .. },
              mpi::SecretKeyMaterial::ECDH { .. },

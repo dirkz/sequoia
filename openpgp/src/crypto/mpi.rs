@@ -650,6 +650,7 @@ impl PublicKey {
     /// key.
     pub fn algo(&self) -> Option<PublicKeyAlgorithm> {
         use self::PublicKey::*;
+        #[allow(deprecated)]
         match self {
             RSA { .. } => Some(PublicKeyAlgorithm::RSAEncryptSign),
             DSA { .. } => Some(PublicKeyAlgorithm::DSA),
@@ -992,6 +993,7 @@ impl SecretKeyMaterial {
     /// key.
     pub fn algo(&self) -> Option<PublicKeyAlgorithm> {
         use self::SecretKeyMaterial::*;
+        #[allow(deprecated)]
         match self {
             RSA { .. } => Some(PublicKeyAlgorithm::RSAEncryptSign),
             DSA { .. } => Some(PublicKeyAlgorithm::DSA),
@@ -1176,6 +1178,7 @@ impl Ciphertext {
         // Fields are mostly MPIs that consist of two octets length
         // plus the big endian value itself. All other field types are
         // commented.
+        #[allow(deprecated)]
         match self {
             RSA { .. } => Some(PublicKeyAlgorithm::RSAEncryptSign),
             ElGamal { .. } => Some(PublicKeyAlgorithm::ElGamalEncrypt),
