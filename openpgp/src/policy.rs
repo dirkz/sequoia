@@ -743,9 +743,9 @@ a_cutoff_list!(AsymmetricAlgorithmCutoffList, AsymmetricAlgorithm, 23,
 a_cutoff_list!(SymmetricAlgorithmCutoffList, SymmetricAlgorithm, 14,
                [
                    REJECT,                   // 0. Unencrypted.
-                   ACCEPT,                   // 1. IDEA.
+                   Some(Timestamp::Y2024M2), // 1. IDEA.
                    Some(Timestamp::Y2017M2), // 2. TripleDES.
-                   ACCEPT,                   // 3. CAST5.
+                   Some(Timestamp::Y2024M2), // 3. CAST5.
                    ACCEPT,                   // 4. Blowfish.
                    REJECT,                   // 5. Reserved.
                    REJECT,                   // 6. Reserved.

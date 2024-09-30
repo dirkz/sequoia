@@ -753,11 +753,14 @@ impl Arbitrary for Curve {
 pub enum SymmetricAlgorithm {
     /// Null encryption.
     Unencrypted,
-    /// IDEA block cipher.
+    /// IDEA block cipher, deprecated in RFC 9580.
+    #[deprecated(note = "Use a newer symmetric algorithm instead.")]
     IDEA,
-    /// 3-DES in EDE configuration.
+    /// 3-DES in EDE configuration, deprecated in RFC 9580.
+    #[deprecated(note = "Use a newer symmetric algorithm instead.")]
     TripleDES,
-    /// CAST5/CAST128 block cipher.
+    /// CAST5/CAST128 block cipher, deprecated in RFC 9580.
+    #[deprecated(note = "Use a newer symmetric algorithm instead.")]
     CAST5,
     /// Schneier et.al. Blowfish block cipher.
     Blowfish,
@@ -782,6 +785,7 @@ pub enum SymmetricAlgorithm {
 }
 assert_send_and_sync!(SymmetricAlgorithm);
 
+#[allow(deprecated)]
 const SYMMETRIC_ALGORITHM_VARIANTS: [ SymmetricAlgorithm; 11 ] = [
     SymmetricAlgorithm::IDEA,
     SymmetricAlgorithm::TripleDES,
@@ -804,6 +808,7 @@ impl Default for SymmetricAlgorithm {
 
 impl From<u8> for SymmetricAlgorithm {
     fn from(u: u8) -> Self {
+        #[allow(deprecated)]
         match u {
             0 => SymmetricAlgorithm::Unencrypted,
             1 => SymmetricAlgorithm::IDEA,
@@ -825,6 +830,7 @@ impl From<u8> for SymmetricAlgorithm {
 
 impl From<SymmetricAlgorithm> for u8 {
     fn from(s: SymmetricAlgorithm) -> u8 {
+        #[allow(deprecated)]
         match s {
             SymmetricAlgorithm::Unencrypted => 0,
             SymmetricAlgorithm::IDEA => 1,
@@ -865,6 +871,7 @@ impl From<SymmetricAlgorithm> for u8 {
 /// ```
 impl fmt::Display for SymmetricAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        #[allow(deprecated)]
         if f.alternate() {
             match *self {
                 SymmetricAlgorithm::Unencrypted =>
@@ -973,6 +980,7 @@ impl SymmetricAlgorithm {
     ///
     /// Fails if the algorithm isn't known to Sequoia.
     pub fn key_size(self) -> Result<usize> {
+        #[allow(deprecated)]
         match self {
             SymmetricAlgorithm::IDEA => Ok(16),
             SymmetricAlgorithm::TripleDES => Ok(24),
@@ -994,6 +1002,7 @@ impl SymmetricAlgorithm {
     ///
     /// Fails if the algorithm isn't known to Sequoia.
     pub fn block_size(self) -> Result<usize> {
+        #[allow(deprecated)]
         match self {
             SymmetricAlgorithm::IDEA => Ok(8),
             SymmetricAlgorithm::TripleDES => Ok(8),
