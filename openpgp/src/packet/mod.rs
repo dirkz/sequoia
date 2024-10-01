@@ -387,6 +387,18 @@ impl Packet {
         }
     }
 
+    /// Returns whether this is a critical packet.
+    ///
+    /// Upon encountering an unknown critical packet, implementations
+    /// MUST reject the whole packet sequence.  On the other hand,
+    /// unknown non-critical packets MUST be ignored.  See [Section
+    /// 4.3 of RFC 9580].
+    ///
+    /// [Section 4.3 of RFC 9580]: https://www.rfc-editor.org/rfc/rfc9580.html#section-4.3
+    pub fn is_critical(&self) -> bool {
+        self.tag().is_critical()
+    }
+
     /// Returns the `Packet's` version, if the packet is versioned and
     /// recognized.
     ///

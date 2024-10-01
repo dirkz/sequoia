@@ -778,6 +778,13 @@ impl<'a> CertParser<'a> {
                 // section 5.14 of RFC 9580.
                 return Ok(None);
             },
+            p if Cert::valid_packet(&p).is_err()
+                && ! p.tag().is_critical() =>
+            {
+                // "Unknown, non-critical packets MUST be ignored when
+                // received.", section 4.3 of RFC 9580.
+                return Ok(None);
+            },
             _ => {},
         }
 

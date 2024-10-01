@@ -222,6 +222,11 @@ impl MessageValidator {
                 // section 5.14 of RFC 9580.
                 return;
             },
+            t if ! t.is_critical() => {
+                // "Unknown, non-critical packets MUST be ignored when
+                // received.", section 4.3 of RFC 9580.
+                return;
+            },
             _ => {
                 // Unknown token.
                 self.error = Some(MessageParserError::OpenPGP(

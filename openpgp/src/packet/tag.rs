@@ -258,6 +258,24 @@ impl Arbitrary for Tag {
 }
 
 impl Tag {
+    /// Returns whether the `Tag` denotes a critical packet.
+    ///
+    /// Upon encountering an unknown critical packet, implementations
+    /// MUST reject the whole packet sequence.  On the other hand,
+    /// unknown non-critical packets MUST be ignored.  See [Section
+    /// 4.3 of RFC 9580].
+    ///
+    /// [Section 4.3 of RFC 9580]: https://www.rfc-editor.org/rfc/rfc9580.html#section-4.3
+    pub fn is_critical(&self) -> bool {
+        match u8::from(self) {
+            0..=39 => true,
+            40..=63 => false,
+            // Should never happen, but let's map this to critical as
+            // a conservative choice.
+            64..=255 => true,
+        }
+    }
+
     /// Returns whether the `Tag` can be at the start of a valid
     /// message.
     ///
